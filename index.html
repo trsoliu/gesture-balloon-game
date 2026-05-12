@@ -185,6 +185,38 @@
             transition: transform 0.2s;
         }
         #fullscreenToggle:hover { transform: scale(1.1); }
+        #pauseToggle {
+            position: absolute;
+            top: 180px;
+            right: 20px;
+            width: 44px;
+            height: 44px;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            z-index: 16;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s, background 0.2s;
+        }
+        #pauseToggle:hover { transform: scale(1.1); }
+        #pauseToggle.paused {
+            background: rgba(255, 215, 61, 0.8);
+            color: #000;
+            animation: pauseGlow 1.2s ease-in-out infinite;
+        }
+        @keyframes pauseGlow {
+            0%, 100% { box-shadow: 0 0 10px rgba(255, 215, 61, 0.5); }
+            50% { box-shadow: 0 0 30px rgba(255, 215, 61, 0.9); }
+        }
         #controlPanel h3 {
             font-size: 16px;
             margin-bottom: 12px;
@@ -286,6 +318,7 @@
 
         <button id="panelToggle" title="设置">⚙</button>
         <button id="fullscreenToggle" title="全屏 (F)">⛶</button>
+        <button id="pauseToggle" title="暂停/恢复 (空格)">⏸</button>
         <div id="controlPanel">
             <h3>🎛 控制面板</h3>
             <div class="control-row">
@@ -340,7 +373,6 @@
                 <input type="checkbox" id="skeletonToggle" checked>
             </div>
             <button id="fullscreenBtn" style="width: 100%; margin-top: 10px; padding: 10px; font-size: 14px;">⛶ 切换全屏</button>
-            <button id="pauseBtn" style="width: 100%; margin-top: 8px; padding: 10px; font-size: 14px;">⏸ 暂停/恢复</button>
         </div>
 
         <div id="startScreen">
@@ -489,58 +521,130 @@
         }
 
         const sfx = {
-            pop:    () => playTone({ freq: 800, slide: 400, duration: 0.12, type: 'triangle', volume: 0.8 }),
+            pop: () => {
+                // 泡泡双层音：高频下滑 + 低频回弹
+                playTone({ freq: 1200, slide: 300, duration: 0.15, type: 'triangle', volume: 1.0 });
+                playTone({ freq: 600, slide: 900, duration: 0.1, type: 'sine', volume: 0.7 });
+                playNoise({ duration: 0.08, volume: 0.4, filterFreq: 3000 });
+            },
             star:   () => {
-                [523, 659, 784, 1047].forEach((f, i) => {
-                    setTimeout(() => playTone({ freq: f, duration: 0.15, type: 'sine', volume: 0.9 }), i * 60);
+                // 金色上行七音阶 + 高音点缀
+                [523, 659, 784, 988, 1175, 1397, 1760].forEach((f, i) => {
+                    setTimeout(() => playTone({ freq: f, duration: 0.18, type: 'sine', volume: 1.0 }), i * 45);
                 });
-            },
-            bomb:   () => {
-                playNoise({ duration: 0.4, volume: 1, filterFreq: 400 });
-                playTone({ freq: 120, slide: 40, duration: 0.4, type: 'sawtooth', volume: 0.8 });
-            },
-            freeze: () => {
-                playTone({ freq: 1200, slide: 600, duration: 0.3, type: 'sine', volume: 0.7 });
-                setTimeout(() => playTone({ freq: 900, slide: 450, duration: 0.3, type: 'sine', volume: 0.5 }), 80);
-            },
-            multi:  () => {
-                [440, 554, 659].forEach((f, i) => {
-                    setTimeout(() => playTone({ freq: f, duration: 0.1, type: 'square', volume: 0.6 }), i * 50);
-                });
-            },
-            time:   () => {
-                playTone({ freq: 660, slide: 880, duration: 0.2, type: 'sine', volume: 0.7 });
-            },
-            miss:   () => playTone({ freq: 200, slide: 150, duration: 0.1, type: 'sine', volume: 0.3 }),
-            combo:  (n) => playTone({ freq: 400 + n * 50, duration: 0.12, type: 'square', volume: 0.5 }),
-            levelUp:() => {
-                [523, 659, 784, 1047].forEach((f, i) => {
-                    setTimeout(() => playTone({ freq: f, duration: 0.2, type: 'triangle', volume: 0.8 }), i * 80);
-                });
-            },
-            countdown: () => playTone({ freq: 880, duration: 0.1, type: 'sine', volume: 0.6 }),
-            gameOver: () => {
-                [659, 523, 440, 330].forEach((f, i) => {
-                    setTimeout(() => playTone({ freq: f, duration: 0.3, type: 'triangle', volume: 0.7 }), i * 150);
-                });
-            },
-            start:  () => {
-                [440, 554, 659, 880].forEach((f, i) => {
-                    setTimeout(() => playTone({ freq: f, duration: 0.12, type: 'triangle', volume: 0.7 }), i * 60);
-                });
+                setTimeout(() => {
+                    playTone({ freq: 2093, duration: 0.4, type: 'triangle', volume: 1.0 });
+                    playTone({ freq: 2637, duration: 0.4, type: 'sine', volume: 0.6 });
+                }, 350);
             },
             rainbow: () => {
-                // 上行琶音 + 高音点缀
-                [392, 494, 587, 740, 880, 1109, 1319].forEach((f, i) => {
-                    setTimeout(() => playTone({ freq: f, duration: 0.18, type: 'sine', volume: 0.7 }), i * 45);
+                // 全频率上行琶音 + 和声 + 超高音铃铛
+                const notes = [392, 494, 587, 740, 880, 1109, 1319, 1568, 1865];
+                notes.forEach((f, i) => {
+                    setTimeout(() => {
+                        playTone({ freq: f, duration: 0.22, type: 'sine', volume: 1.0 });
+                        playTone({ freq: f * 2, duration: 0.22, type: 'triangle', volume: 0.5 });
+                    }, i * 40);
                 });
-                setTimeout(() => playTone({ freq: 1760, duration: 0.3, type: 'triangle', volume: 0.8 }), 350);
+                setTimeout(() => {
+                    [2349, 2794, 3136].forEach((f, i) => {
+                        setTimeout(() => playTone({ freq: f, duration: 0.5, type: 'sine', volume: 0.8 }), i * 50);
+                    });
+                }, 400);
+            },
+            bomb:   () => {
+                // 爆炸：大噪音 + 深低频下滑 + 延迟回响
+                playNoise({ duration: 0.6, volume: 1.5, filterFreq: 600 });
+                playTone({ freq: 150, slide: 30, duration: 0.5, type: 'sawtooth', volume: 1.2 });
+                playTone({ freq: 80, slide: 40, duration: 0.7, type: 'square', volume: 1.0 });
+                setTimeout(() => {
+                    playNoise({ duration: 0.3, volume: 0.5, filterFreq: 300 });
+                }, 150);
+            },
+            freeze: () => {
+                // 冰冻：高频滑音 + 水晶叮咚 + 噪声风声
+                playTone({ freq: 1800, slide: 400, duration: 0.5, type: 'sine', volume: 1.0 });
+                setTimeout(() => playTone({ freq: 1400, slide: 300, duration: 0.4, type: 'sine', volume: 0.8 }), 80);
+                setTimeout(() => playTone({ freq: 1000, slide: 200, duration: 0.4, type: 'triangle', volume: 0.6 }), 160);
+                [2093, 2637, 3136].forEach((f, i) => {
+                    setTimeout(() => playTone({ freq: f, duration: 0.15, type: 'sine', volume: 0.5 }), 200 + i * 80);
+                });
+            },
+            multi:  () => {
+                // 双倍：快速三连上行 + 高音强化
+                [440, 554, 659, 880].forEach((f, i) => {
+                    setTimeout(() => {
+                        playTone({ freq: f, duration: 0.12, type: 'square', volume: 0.9 });
+                        playTone({ freq: f * 1.5, duration: 0.12, type: 'sawtooth', volume: 0.5 });
+                    }, i * 45);
+                });
+                setTimeout(() => playTone({ freq: 1320, duration: 0.3, type: 'triangle', volume: 0.9 }), 200);
+            },
+            time:   () => {
+                // 时间：魔法回转音 + 钟声
+                playTone({ freq: 660, slide: 1320, duration: 0.3, type: 'sine', volume: 1.0 });
+                setTimeout(() => playTone({ freq: 880, slide: 1760, duration: 0.25, type: 'triangle', volume: 0.9 }), 100);
+                setTimeout(() => playTone({ freq: 1760, duration: 0.4, type: 'sine', volume: 0.7 }), 250);
+            },
+            miss:   () => {
+                // 失败：沉闷短音 + 噪声
+                playTone({ freq: 220, slide: 110, duration: 0.15, type: 'sawtooth', volume: 0.5 });
+                playNoise({ duration: 0.1, volume: 0.3, filterFreq: 800 });
+            },
+            combo:  (n) => {
+                // 连击：分数越高音调越高，双层和声
+                const baseFreq = 440 + Math.min(n, 10) * 60;
+                playTone({ freq: baseFreq, duration: 0.15, type: 'square', volume: 0.8 });
+                playTone({ freq: baseFreq * 1.5, duration: 0.15, type: 'triangle', volume: 0.5 });
+            },
+            levelUp:() => {
+                // 升级：华丽五音上行 + 高音铃铛
+                [523, 659, 784, 1047, 1319].forEach((f, i) => {
+                    setTimeout(() => {
+                        playTone({ freq: f, duration: 0.22, type: 'triangle', volume: 1.0 });
+                        playTone({ freq: f / 2, duration: 0.22, type: 'sine', volume: 0.5 });
+                    }, i * 70);
+                });
+                setTimeout(() => playTone({ freq: 2093, duration: 0.5, type: 'sine', volume: 0.8 }), 400);
+            },
+            countdown: () => {
+                // 倒计时：紧张的短促双音
+                playTone({ freq: 1100, duration: 0.08, type: 'square', volume: 0.9 });
+                setTimeout(() => playTone({ freq: 660, duration: 0.05, type: 'sine', volume: 0.5 }), 50);
+            },
+            gameOver: () => {
+                // 结束：戏剧性下行 + 低音重击
+                [784, 659, 523, 440, 349, 262].forEach((f, i) => {
+                    setTimeout(() => {
+                        playTone({ freq: f, duration: 0.35, type: 'triangle', volume: 0.9 });
+                        playTone({ freq: f / 2, duration: 0.35, type: 'sawtooth', volume: 0.4 });
+                    }, i * 130);
+                });
+                setTimeout(() => {
+                    playNoise({ duration: 0.8, volume: 0.5, filterFreq: 400 });
+                    playTone({ freq: 100, slide: 50, duration: 0.8, type: 'sawtooth', volume: 0.8 });
+                }, 800);
+            },
+            start:  () => {
+                // 开场：号角齐鸣
+                [440, 554, 659, 880, 1109].forEach((f, i) => {
+                    setTimeout(() => {
+                        playTone({ freq: f, duration: 0.15, type: 'triangle', volume: 1.0 });
+                        playTone({ freq: f * 1.5, duration: 0.15, type: 'square', volume: 0.4 });
+                    }, i * 50);
+                });
+                setTimeout(() => playTone({ freq: 1760, duration: 0.5, type: 'sine', volume: 0.8 }), 300);
             },
             pause:  () => {
-                playTone({ freq: 600, slide: 300, duration: 0.2, type: 'sine', volume: 0.6 });
+                // 暂停：戏剧性下滑
+                playTone({ freq: 880, slide: 220, duration: 0.35, type: 'sine', volume: 0.9 });
+                playTone({ freq: 440, slide: 110, duration: 0.35, type: 'triangle', volume: 0.6 });
             },
             resume: () => {
-                playTone({ freq: 300, slide: 600, duration: 0.2, type: 'sine', volume: 0.6 });
+                // 恢复：活泼上滑 + 高音强化
+                playTone({ freq: 220, slide: 880, duration: 0.3, type: 'sine', volume: 0.9 });
+                playTone({ freq: 440, slide: 1760, duration: 0.3, type: 'triangle', volume: 0.6 });
+                setTimeout(() => playTone({ freq: 1320, duration: 0.2, type: 'square', volume: 0.5 }), 200);
             }
         };
 
@@ -1133,12 +1237,19 @@
 
         function togglePause() {
             gameState.paused = !gameState.paused;
+            const btn = document.getElementById('pauseToggle');
             if (gameState.paused) {
                 sfx.pause();
                 stopBGM();
+                btn.textContent = '▶';
+                btn.classList.add('paused');
+                btn.title = '恢复 (空格)';
             } else {
                 sfx.resume();
                 if (settings.bgmEnabled) startBGM();
+                btn.textContent = '⏸';
+                btn.classList.remove('paused');
+                btn.title = '暂停 (空格)';
                 lastFrameTime = performance.now();  // 避免恢复后 deltaTime 跳跃
             }
         }
@@ -1513,8 +1624,8 @@
                 drawPauseOverlay();
             }
 
-            // 暂停手势进度指示（未触发但正在按住）
-            if (!gameState.paused && gameState.pauseHoldFrames > 0 && gameState.pauseCooldown === 0) {
+            // 暂停手势进度指示（暂停和游戏中都显示）
+            if (gameState.pauseHoldFrames > 0 && gameState.pauseCooldown === 0) {
                 drawPauseHoldIndicator();
             }
 
@@ -1747,7 +1858,7 @@
             settings.showSkeleton = e.target.checked;
         });
 
-        document.getElementById('pauseBtn').addEventListener('click', () => {
+        document.getElementById('pauseToggle').addEventListener('click', () => {
             if (gameState.running) {
                 togglePause();
                 gameState.pauseCooldown = PAUSE_COOLDOWN_FRAMES;
