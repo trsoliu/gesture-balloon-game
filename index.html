@@ -315,11 +315,13 @@
                 <label for="skeletonToggle">🦴 显示骨架</label>
                 <input type="checkbox" id="skeletonToggle" checked>
             </div>
+            <button id="pauseBtn" style="width: 100%; margin-top: 10px; padding: 10px; font-size: 14px;">⏸ 暂停/恢复</button>
         </div>
 
         <div id="startScreen">
             <h1>🎈 手势抓气球 🎈</h1>
             <p class="instruction">✋ 张开手掌 → ✊ 握拳 = 抓取气球</p>
+            <p class="instruction">✌ 胜利手势（保持 ~0.7 秒）= 暂停/恢复</p>
             <p class="instruction">支持多人同时游玩！最多识别 4 只手</p>
             <div style="font-size: 16px; margin: 15px 0; line-height: 1.8;">
                 <div>🔴 普通气球 +10 &nbsp;&nbsp; 🟢 +15 &nbsp;&nbsp; 🟡 +20</div>
@@ -346,13 +348,16 @@
         // 游戏状态
         const gameState = {
             running: false,
+            paused: false,
+            pauseHoldFrames: 0,     // ✌ 手势持续帧数（需持续才触发）
+            pauseCooldown: 0,       // 切换后冷却，防止连续触发
             score: 0,
             level: 1,
             timeLeft: 60,
             balloonsCaught: 0,
             balloons: [],
             particles: [],
-            hands: [],  // 多手支持：每只手 { position, closed, lastClosed, landmarks, color }
+            hands: [],  // 多手支持：每只手 { position, closed, lastClosed, landmarks, color, peace }
             grabbedBalloon: null,
             spawnRate: 1500,
             lastSpawn: 0,
@@ -498,6 +503,12 @@
                 [440, 554, 659, 880].forEach((f, i) => {
                     setTimeout(() => playTone({ freq: f, duration: 0.12, type: 'triangle', volume: 0.7 }), i * 60);
                 });
+            },
+            pause:  () => {
+                playTone({ freq: 600, slide: 300, duration: 0.2, type: 'sine', volume: 0.6 });
+            },
+            resume: () => {
+                playTone({ freq: 300, slide: 600, duration: 0.2, type: 'sine', volume: 0.6 });
             }
         };
 
@@ -651,6 +662,7 @@
                     };
 
                     const closed = detectFist(landmarks);
+                    const peace = !closed && detectPeace(landmarks);
                     const lastClosed = prevHands[i] ? prevHands[i].closed : false;
 
                     const handLandmarks = landmarks.map(p => ({
@@ -658,10 +670,10 @@
                         y: p.y * canvas.height
                     }));
 
-                    return { position, closed, lastClosed, landmarks: handLandmarks, color: HAND_COLORS[i % HAND_COLORS.length] };
+                    return { position, closed, peace, lastClosed, landmarks: handLandmarks, color: HAND_COLORS[i % HAND_COLORS.length] };
                 });
 
-                const states = gameState.hands.map(h => h.closed ? '✊' : '✋').join(' ');
+                const states = gameState.hands.map(h => h.peace ? '✌' : (h.closed ? '✊' : '✋')).join(' ');
                 handStatusEl.textContent = `手势 (${gameState.hands.length}): ${states}`;
             } else {
                 gameState.hands = [];
@@ -732,6 +744,38 @@
             }
 
             return isFist;
+        }
+
+        // 检测 ✌ 胜利手势：食指+中指伸直，无名指+小指弯曲
+        function detectPeace(landmarks) {
+            function fingerBent(tipIdx, pipIdx, mcpIdx) {
+                const tip = landmarks[tipIdx], pip = landmarks[pipIdx], mcp = landmarks[mcpIdx];
+                const v1x = mcp.x - pip.x, v1y = mcp.y - pip.y;
+                const v2x = tip.x - pip.x, v2y = tip.y - pip.y;
+                const cosAngle = (v1x * v2x + v1y * v2y) / (Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y) + 1e-6);
+                return cosAngle > -0.3;  // true = 弯曲
+            }
+
+            const indexBent  = fingerBent(8, 6, 5);
+            const middleBent = fingerBent(12, 10, 9);
+            const ringBent   = fingerBent(16, 14, 13);
+            const pinkyBent  = fingerBent(20, 18, 17);
+
+            // 食指+中指伸直（不弯），无名指+小指弯曲
+            if (indexBent || middleBent) return false;
+            if (!ringBent || !pinkyBent) return false;
+
+            // 食指与中指指尖必须分开（V 形），距离应大于 0.04（归一化坐标）
+            const indexTip = landmarks[8];
+            const middleTip = landmarks[12];
+            const tipDist = Math.hypot(indexTip.x - middleTip.x, indexTip.y - middleTip.y);
+
+            // 用手掌大小做归一化
+            const wrist = landmarks[0], middleMCP = landmarks[9];
+            const palmSize = Math.hypot(wrist.x - middleMCP.x, wrist.y - middleMCP.y);
+            const ratio = tipDist / (palmSize + 1e-6);
+
+            return ratio > 0.3;
         }
 
         // 摄像头在 startGame 中初始化
@@ -1008,6 +1052,42 @@
             gameState.balloons.push(new Balloon(selectedType));
         }
 
+        // ============ 暂停手势处理 ============
+        const PAUSE_HOLD_THRESHOLD = 20;  // 需持续 20 帧 (~0.7 秒) 才触发
+        const PAUSE_COOLDOWN_FRAMES = 45; // 切换后冷却 45 帧 (~1.5 秒)
+
+        function handlePauseGesture() {
+            if (gameState.pauseCooldown > 0) {
+                gameState.pauseCooldown--;
+                gameState.pauseHoldFrames = 0;
+                return;
+            }
+
+            const anyPeace = gameState.hands.some(h => h.peace);
+            if (anyPeace) {
+                gameState.pauseHoldFrames++;
+                if (gameState.pauseHoldFrames >= PAUSE_HOLD_THRESHOLD) {
+                    togglePause();
+                    gameState.pauseHoldFrames = 0;
+                    gameState.pauseCooldown = PAUSE_COOLDOWN_FRAMES;
+                }
+            } else {
+                gameState.pauseHoldFrames = 0;
+            }
+        }
+
+        function togglePause() {
+            gameState.paused = !gameState.paused;
+            if (gameState.paused) {
+                sfx.pause();
+                stopBGM();
+            } else {
+                sfx.resume();
+                if (settings.bgmEnabled) startBGM();
+                lastFrameTime = performance.now();  // 避免恢复后 deltaTime 跳跃
+            }
+        }
+
         // ============ 抓取逻辑 ============
         function handleGrabbing() {
             for (const hand of gameState.hands) {
@@ -1256,12 +1336,15 @@
             const deltaTime = timestamp - lastFrameTime;
             lastFrameTime = timestamp;
 
+            // 每帧检测暂停手势（无论是否暂停都要检测，以支持恢复）
+            handlePauseGesture();
+
             // 清空画布
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // 屏幕震动
             ctx.save();
-            if (gameState.shakeTimer > 0) {
+            if (!gameState.paused && gameState.shakeTimer > 0) {
                 const shakeAmount = gameState.shakeTimer / 2;
                 const shakeX = (Math.random() - 0.5) * shakeAmount;
                 const shakeY = (Math.random() - 0.5) * shakeAmount;
@@ -1269,64 +1352,71 @@
                 gameState.shakeTimer--;
             }
 
-            // 更新时间
-            const prevTime = gameState.timeLeft;
-            gameState.timeLeft -= deltaTime / 1000;
-            if (gameState.timeLeft <= 0) {
-                gameState.timeLeft = 0;
-                endGame();
-                return;
-            }
+            if (!gameState.paused) {
+                // 更新时间
+                const prevTime = gameState.timeLeft;
+                gameState.timeLeft -= deltaTime / 1000;
+                if (gameState.timeLeft <= 0) {
+                    gameState.timeLeft = 0;
+                    endGame();
+                    return;
+                }
 
-            // 最后 5 秒倒计时滴答
-            const prevCeil = Math.ceil(prevTime);
-            const currCeil = Math.ceil(gameState.timeLeft);
-            if (currCeil < prevCeil && currCeil <= 5 && currCeil > 0) {
-                sfx.countdown();
-                timerEl.classList.remove('score-pop');
-                void timerEl.offsetWidth;
-                timerEl.classList.add('score-pop');
-            }
+                // 最后 5 秒倒计时滴答
+                const prevCeil = Math.ceil(prevTime);
+                const currCeil = Math.ceil(gameState.timeLeft);
+                if (currCeil < prevCeil && currCeil <= 5 && currCeil > 0) {
+                    sfx.countdown();
+                    timerEl.classList.remove('score-pop');
+                    void timerEl.offsetWidth;
+                    timerEl.classList.add('score-pop');
+                }
 
-            // 更新各种定时器（按帧数）
-            if (gameState.multiplierTimer > 0) gameState.multiplierTimer--;
-            else gameState.scoreMultiplier = 1;
+                // 更新各种定时器（按帧数）
+                if (gameState.multiplierTimer > 0) gameState.multiplierTimer--;
+                else gameState.scoreMultiplier = 1;
 
-            if (gameState.freezeTimer > 0) gameState.freezeTimer--;
+                if (gameState.freezeTimer > 0) gameState.freezeTimer--;
 
-            if (gameState.comboTimer > 0) {
-                gameState.comboTimer--;
-            } else if (gameState.combo > 0) {
-                // 连击超时，重置
-                gameState.maxCombo = Math.max(gameState.maxCombo, gameState.combo);
-                gameState.combo = 0;
-            }
+                if (gameState.comboTimer > 0) {
+                    gameState.comboTimer--;
+                } else if (gameState.combo > 0) {
+                    // 连击超时，重置
+                    gameState.maxCombo = Math.max(gameState.maxCombo, gameState.combo);
+                    gameState.combo = 0;
+                }
 
-            // 更新难度
-            updateDifficulty();
+                // 更新难度
+                updateDifficulty();
 
-            // 生成气球
-            if (timestamp - gameState.lastSpawn > gameState.spawnRate) {
-                spawnBalloon();
+                // 生成气球
+                if (timestamp - gameState.lastSpawn > gameState.spawnRate) {
+                    spawnBalloon();
+                    gameState.lastSpawn = timestamp;
+                }
+
+                // 处理抓取
+                handleGrabbing();
+
+                // 更新气球
+                for (const balloon of gameState.balloons) {
+                    balloon.update(deltaTime);
+                }
+                gameState.balloons = gameState.balloons.filter(b => !b.isDead());
+
+                // 更新粒子
+                for (const particle of gameState.particles) {
+                    particle.update();
+                }
+                gameState.particles = gameState.particles.filter(p => !p.isDead());
+            } else {
+                // 暂停时保持 lastSpawn 相对时间，避免恢复后一次性大量生成
                 gameState.lastSpawn = timestamp;
             }
 
-            // 处理抓取
-            handleGrabbing();
-
-            // 更新和绘制气球
-            for (const balloon of gameState.balloons) {
-                balloon.update(deltaTime);
-                balloon.draw(ctx);
-            }
-            gameState.balloons = gameState.balloons.filter(b => !b.isDead());
-
-            // 更新和绘制粒子
-            for (const particle of gameState.particles) {
-                particle.update();
-                particle.draw(ctx);
-            }
-            gameState.particles = gameState.particles.filter(p => !p.isDead());
+            // 绘制气球和粒子（暂停时也绘制，保持画面）
+            for (const balloon of gameState.balloons) balloon.draw(ctx);
+            for (const particle of gameState.particles) particle.draw(ctx);
 
             // 绘制手部光标
             drawHandCursor();
@@ -1334,7 +1424,7 @@
             ctx.restore(); // 结束屏幕震动变换
 
             // 屏幕闪光效果（不受震动影响）
-            if (gameState.flashTimer > 0 && gameState.flashColor) {
+            if (!gameState.paused && gameState.flashTimer > 0 && gameState.flashColor) {
                 ctx.save();
                 ctx.globalAlpha = gameState.flashTimer / 20;
                 ctx.fillStyle = gameState.flashColor;
@@ -1344,7 +1434,7 @@
             }
 
             // 冰冻时全屏蓝色 overlay
-            if (gameState.freezeTimer > 0) {
+            if (!gameState.paused && gameState.freezeTimer > 0) {
                 ctx.save();
                 ctx.globalAlpha = 0.1 + Math.sin(Date.now() * 0.005) * 0.05;
                 ctx.fillStyle = '#00D9FF';
@@ -1352,10 +1442,73 @@
                 ctx.restore();
             }
 
+            // 暂停遮罩
+            if (gameState.paused) {
+                drawPauseOverlay();
+            }
+
+            // 暂停手势进度指示（未触发但正在按住）
+            if (!gameState.paused && gameState.pauseHoldFrames > 0 && gameState.pauseCooldown === 0) {
+                drawPauseHoldIndicator();
+            }
+
             // 更新UI
             updateUI();
 
             requestAnimationFrame(gameLoop);
+        }
+
+        // 绘制暂停遮罩
+        function drawPauseOverlay() {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 脉冲效果
+            const pulse = 0.85 + Math.sin(Date.now() * 0.003) * 0.15;
+            ctx.globalAlpha = pulse;
+
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            ctx.font = 'bold 96px Arial';
+            ctx.fillText('⏸', canvas.width / 2, canvas.height / 2 - 60);
+
+            ctx.font = 'bold 48px Arial';
+            ctx.fillText('游戏已暂停', canvas.width / 2, canvas.height / 2 + 20);
+
+            ctx.font = '24px Arial';
+            ctx.fillStyle = '#FFD93D';
+            ctx.fillText('✌ 做胜利手势恢复游戏', canvas.width / 2, canvas.height / 2 + 70);
+            ctx.restore();
+        }
+
+        // 绘制暂停手势按住进度指示
+        function drawPauseHoldIndicator() {
+            const progress = Math.min(gameState.pauseHoldFrames / PAUSE_HOLD_THRESHOLD, 1);
+            const cx = canvas.width / 2;
+            const cy = 80;
+            const r = 30;
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.strokeStyle = '#FFD93D';
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+            ctx.stroke();
+
+            ctx.fillStyle = 'white';
+            ctx.font = '28px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('✌', cx, cy);
+            ctx.restore();
         }
 
         // ============ 游戏控制 ============
@@ -1404,6 +1557,9 @@
             // 重置游戏状态（应用难度和时长设置）
             const preset = DIFFICULTY_PRESETS[settings.difficulty];
             gameState.running = true;
+            gameState.paused = false;
+            gameState.pauseHoldFrames = 0;
+            gameState.pauseCooldown = 0;
             gameState.score = 0;
             gameState.level = 1;
             gameState.timeLeft = settings.duration;
@@ -1523,6 +1679,22 @@
 
         document.getElementById('skeletonToggle').addEventListener('change', (e) => {
             settings.showSkeleton = e.target.checked;
+        });
+
+        document.getElementById('pauseBtn').addEventListener('click', () => {
+            if (gameState.running) {
+                togglePause();
+                gameState.pauseCooldown = PAUSE_COOLDOWN_FRAMES;
+            }
+        });
+
+        // 空格键快捷暂停
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && gameState.running) {
+                e.preventDefault();
+                togglePause();
+                gameState.pauseCooldown = PAUSE_COOLDOWN_FRAMES;
+            }
         });
     </script>
 </body>
