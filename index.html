@@ -142,7 +142,7 @@
         <div id="startScreen">
             <h1>🎈 手势抓气球 🎈</h1>
             <p class="instruction">✋ 张开手掌 → ✊ 握拳 = 抓取气球</p>
-            <p class="instruction">必须完成"张开→握拳"的完整动作才能抓取！</p>
+            <p class="instruction">支持多人同时游玩！最多识别 4 只手</p>
             <div style="font-size: 16px; margin: 15px 0; line-height: 1.8;">
                 <div>🔴 普通气球 +10 &nbsp;&nbsp; 🟢 +15 &nbsp;&nbsp; 🟡 +20</div>
                 <div>⭐ 星星 +50分 &nbsp;&nbsp; 💣 炸弹 -30分！</div>
@@ -174,26 +174,29 @@
             balloonsCaught: 0,
             balloons: [],
             particles: [],
-            handPosition: null,
-            handClosed: false,
+            hands: [],  // 多手支持：每只手 { position, closed, lastClosed, landmarks, color }
             grabbedBalloon: null,
-            lastHandClosed: false,
             spawnRate: 1500,
             lastSpawn: 0,
             balloonSpeed: 1,
-            // 新增：连击系统
             combo: 0,
             comboTimer: 0,
             maxCombo: 0,
-            // 新增：特殊效果
-            scoreMultiplier: 1,       // 双倍分数效果
+            scoreMultiplier: 1,
             multiplierTimer: 0,
-            freezeTimer: 0,           // 冰冻效果（气球减速）
-            shakeTimer: 0,            // 屏幕震动
-            flashColor: null,         // 屏幕闪光颜色
+            freezeTimer: 0,
+            shakeTimer: 0,
+            flashColor: null,
             flashTimer: 0,
             debugMode: false
         };
+
+        const HAND_COLORS = [
+            { stroke: 'rgba(100, 255, 200, 0.6)', fill: '#64FFCC', closedStroke: 'rgba(255, 100, 100, 0.6)', closedFill: '#FF6464' },
+            { stroke: 'rgba(100, 180, 255, 0.6)', fill: '#64B4FF', closedStroke: 'rgba(255, 150, 50, 0.6)', closedFill: '#FF9632' },
+            { stroke: 'rgba(255, 200, 100, 0.6)', fill: '#FFC864', closedStroke: 'rgba(200, 50, 255, 0.6)', closedFill: '#C832FF' },
+            { stroke: 'rgba(200, 100, 255, 0.6)', fill: '#C864FF', closedStroke: 'rgba(255, 50, 100, 0.6)', closedFill: '#FF3264' }
+        ];
 
         // 气球类型配置
         const BALLOON_TYPES = [
@@ -246,7 +249,7 @@
                 });
 
                 hands.setOptions({
-                    maxNumHands: 1,
+                    maxNumHands: 4,
                     modelComplexity: 1,
                     minDetectionConfidence: 0.7,
                     minTrackingConfidence: 0.5
@@ -273,36 +276,35 @@
         initMediaPipe();
 
         function onHandResults(results) {
+            const prevHands = gameState.hands;
+
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0];
+                gameState.hands = results.multiHandLandmarks.map((landmarks, i) => {
+                    const palmCenter = {
+                        x: (landmarks[0].x + landmarks[9].x) / 2,
+                        y: (landmarks[0].y + landmarks[9].y) / 2
+                    };
 
-                // 计算手掌中心位置（使用手腕和中指根部的中点）
-                const palmCenter = {
-                    x: (landmarks[0].x + landmarks[9].x) / 2,
-                    y: (landmarks[0].y + landmarks[9].y) / 2
-                };
+                    const position = {
+                        x: (1 - palmCenter.x) * canvas.width,
+                        y: palmCenter.y * canvas.height
+                    };
 
-                // 镜像翻转 x 坐标 (因为视频是镜像的)
-                gameState.handPosition = {
-                    x: (1 - palmCenter.x) * canvas.width,
-                    y: palmCenter.y * canvas.height
-                };
+                    const closed = detectFist(landmarks);
+                    const lastClosed = prevHands[i] ? prevHands[i].closed : false;
 
-                // 检测握拳手势
-                // 通过检查指尖到手腕的距离来判断手是否握紧
-                gameState.handClosed = detectFist(landmarks);
+                    const handLandmarks = landmarks.map(p => ({
+                        x: (1 - p.x) * canvas.width,
+                        y: p.y * canvas.height
+                    }));
 
-                // 保存所有指尖位置用于渲染
-                gameState.handLandmarks = landmarks.map(p => ({
-                    x: (1 - p.x) * canvas.width,
-                    y: p.y * canvas.height
-                }));
+                    return { position, closed, lastClosed, landmarks: handLandmarks, color: HAND_COLORS[i % HAND_COLORS.length] };
+                });
 
-                handStatusEl.textContent = `手势: ${gameState.handClosed ? '✊ 握拳' : '✋ 张开'}`;
+                const states = gameState.hands.map(h => h.closed ? '✊' : '✋').join(' ');
+                handStatusEl.textContent = `手势 (${gameState.hands.length}): ${states}`;
             } else {
-                gameState.handPosition = null;
-                gameState.handLandmarks = null;
-                gameState.handClosed = false;
+                gameState.hands = [];
                 handStatusEl.textContent = '手势: 未检测到手';
             }
         }
@@ -402,14 +404,9 @@
                 // 冰冻效果：气球速度减半
                 const speedMultiplier = gameState.freezeTimer > 0 ? 0.3 : 1;
 
-                if (this.grabbed && gameState.handPosition) {
-                    this.x = gameState.handPosition.x;
-                    this.y = gameState.handPosition.y;
-                } else {
-                    this.y -= this.speed * speedMultiplier;
-                    this.x = this.baseX + Math.sin(Date.now() * this.swayFrequency + this.swayOffset) * this.swayAmplitude;
-                    this.rotation = Math.sin(Date.now() * this.swayFrequency + this.swayOffset) * 0.1;
-                }
+                this.y -= this.speed * speedMultiplier;
+                this.x = this.baseX + Math.sin(Date.now() * this.swayFrequency + this.swayOffset) * this.swayAmplitude;
+                this.rotation = Math.sin(Date.now() * this.swayFrequency + this.swayOffset) * 0.1;
             }
 
             draw(ctx) {
@@ -633,42 +630,37 @@
         }
 
         // ============ 抓取逻辑 ============
-        // 必须执行"张开→握拳"的动作才算抓取
-        // 仅在刚握拳的瞬间检测碰撞，避免持续握拳时一碰到就抓到
         function handleGrabbing() {
-            if (!gameState.handPosition) return;
+            for (const hand of gameState.hands) {
+                if (!hand.position) continue;
 
-            const justClosed = gameState.handClosed && !gameState.lastHandClosed;
+                const justClosed = hand.closed && !hand.lastClosed;
 
-            if (justClosed) {
-                // 触发"抓取"动作：检测周围所有气球
-                let grabbedAny = false;
-                for (const balloon of gameState.balloons) {
-                    if (!balloon.popped && balloon.checkCollision(gameState.handPosition)) {
-                        popBalloon(balloon);
-                        grabbedAny = true;
-                        // 连续抓取奖励: 一次握拳可以抓到范围内多个气球
-                        // 只抓最多3个避免过于强大
-                        if (gameState.balloons.filter(b => b.popped).length >= 3) break;
+                if (justClosed) {
+                    let grabbedAny = false;
+                    let grabbedCount = 0;
+                    for (const balloon of gameState.balloons) {
+                        if (!balloon.popped && balloon.checkCollision(hand.position)) {
+                            popBalloon(balloon);
+                            grabbedAny = true;
+                            grabbedCount++;
+                            if (grabbedCount >= 3) break;
+                        }
+                    }
+
+                    if (grabbedAny) {
+                        gameState.combo++;
+                        gameState.comboTimer = 120;
+                    } else {
+                        gameState.particles.push(new FloatingText(
+                            hand.position.x,
+                            hand.position.y - 40,
+                            '空手!',
+                            '#888888'
+                        ));
                     }
                 }
-
-                if (grabbedAny) {
-                    // 成功抓到：增加连击
-                    gameState.combo++;
-                    gameState.comboTimer = 120; // 2秒内再抓到算连击
-                } else {
-                    // 空手：显示"miss"提示
-                    gameState.particles.push(new FloatingText(
-                        gameState.handPosition.x,
-                        gameState.handPosition.y - 40,
-                        '空手!',
-                        '#888888'
-                    ));
-                }
             }
-
-            gameState.lastHandClosed = gameState.handClosed;
         }
 
         // 处理气球被抓到（得分）
@@ -751,65 +743,62 @@
 
         // ============ 绘制手部光标 ============
         function drawHandCursor() {
-            if (!gameState.handPosition) return;
+            for (const hand of gameState.hands) {
+                if (!hand.position) continue;
 
-            const { x, y } = gameState.handPosition;
+                const { x, y } = hand.position;
+                const colors = hand.color;
 
-            // 绘制手部骨架（如果可用）
-            if (gameState.handLandmarks) {
-                ctx.strokeStyle = gameState.handClosed ? 'rgba(255, 100, 100, 0.6)' : 'rgba(100, 255, 200, 0.6)';
-                ctx.lineWidth = 2;
+                if (hand.landmarks) {
+                    ctx.strokeStyle = hand.closed ? colors.closedStroke : colors.stroke;
+                    ctx.lineWidth = 2;
 
-                // 手指连接定义
-                const connections = [
-                    [0, 1], [1, 2], [2, 3], [3, 4],       // 拇指
-                    [0, 5], [5, 6], [6, 7], [7, 8],       // 食指
-                    [5, 9], [9, 10], [10, 11], [11, 12],  // 中指
-                    [9, 13], [13, 14], [14, 15], [15, 16],// 无名指
-                    [13, 17], [17, 18], [18, 19], [19, 20],// 小指
-                    [0, 17]                                // 手掌
-                ];
+                    const connections = [
+                        [0, 1], [1, 2], [2, 3], [3, 4],
+                        [0, 5], [5, 6], [6, 7], [7, 8],
+                        [5, 9], [9, 10], [10, 11], [11, 12],
+                        [9, 13], [13, 14], [14, 15], [15, 16],
+                        [13, 17], [17, 18], [18, 19], [19, 20],
+                        [0, 17]
+                    ];
 
-                ctx.beginPath();
-                for (const [a, b] of connections) {
-                    ctx.moveTo(gameState.handLandmarks[a].x, gameState.handLandmarks[a].y);
-                    ctx.lineTo(gameState.handLandmarks[b].x, gameState.handLandmarks[b].y);
-                }
-                ctx.stroke();
-
-                // 绘制每个关键点
-                ctx.fillStyle = gameState.handClosed ? '#FF6464' : '#64FFCC';
-                for (const point of gameState.handLandmarks) {
                     ctx.beginPath();
-                    ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
-                    ctx.fill();
+                    for (const [a, b] of connections) {
+                        ctx.moveTo(hand.landmarks[a].x, hand.landmarks[a].y);
+                        ctx.lineTo(hand.landmarks[b].x, hand.landmarks[b].y);
+                    }
+                    ctx.stroke();
+
+                    ctx.fillStyle = hand.closed ? colors.closedFill : colors.fill;
+                    for (const point of hand.landmarks) {
+                        ctx.beginPath();
+                        ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
                 }
-            }
 
-            // 绘制手掌中心圆圈（指示器）
-            ctx.save();
-            const pulseSize = Math.sin(Date.now() * 0.005) * 5;
+                ctx.save();
+                const pulseSize = Math.sin(Date.now() * 0.005) * 5;
 
-            if (gameState.handClosed) {
-                // 握拳状态 - 红色实心
-                ctx.fillStyle = 'rgba(255, 100, 100, 0.4)';
-                ctx.strokeStyle = '#FF6464';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(x, y, 25 + pulseSize, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
-            } else {
-                // 张开状态 - 绿色虚线
-                ctx.strokeStyle = '#64FFCC';
-                ctx.lineWidth = 3;
-                ctx.setLineDash([5, 5]);
-                ctx.beginPath();
-                ctx.arc(x, y, 35 + pulseSize, 0, Math.PI * 2);
-                ctx.stroke();
-                ctx.setLineDash([]);
+                if (hand.closed) {
+                    ctx.fillStyle = colors.closedStroke;
+                    ctx.strokeStyle = colors.closedFill;
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 25 + pulseSize, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                } else {
+                    ctx.strokeStyle = colors.fill;
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath();
+                    ctx.arc(x, y, 35 + pulseSize, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+                ctx.restore();
             }
-            ctx.restore();
         }
 
         // ============ 更新UI ============
@@ -1000,7 +989,7 @@
             gameState.shakeTimer = 0;
             gameState.flashColor = null;
             gameState.flashTimer = 0;
-            gameState.lastHandClosed = false;
+            gameState.hands = [];
 
             startScreen.style.display = 'none';
             gameOverScreen.style.display = 'none';
