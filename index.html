@@ -382,7 +382,7 @@
             <p class="instruction">支持多人同时游玩！最多识别 4 只手</p>
             <div style="font-size: 16px; margin: 15px 0; line-height: 1.8;">
                 <div>🔴 普通气球 +10 &nbsp;&nbsp; 🟢 +15 &nbsp;&nbsp; 🟡 +20</div>
-                <div>⭐ 星星 +50分 &nbsp;&nbsp; 🌈 彩虹 +100分！</div>
+                <div>⭐ 星星 +50 &nbsp;&nbsp; 💖 爱心 +80 &nbsp;&nbsp; 🌈 彩虹 +100！</div>
                 <div>💣 炸弹 -30分 &nbsp;&nbsp; ❄ 冰冻减速</div>
                 <div>×2 双倍气球 &nbsp;&nbsp; ⏰ 时间 +5秒</div>
                 <div>🔥 连击奖励 - 连续抓取获得额外分数</div>
@@ -552,6 +552,20 @@
                     });
                 }, 400);
             },
+            heart: () => {
+                // 心跳双击 + 温柔上行琶音 + 铃铛
+                playTone({ freq: 110, duration: 0.1, type: 'sine', volume: 1.2 });
+                setTimeout(() => playTone({ freq: 110, duration: 0.1, type: 'sine', volume: 1.0 }), 140);
+                // 温柔主旋律
+                [523, 659, 784, 988, 1175].forEach((f, i) => {
+                    setTimeout(() => {
+                        playTone({ freq: f, duration: 0.25, type: 'sine', volume: 0.9 });
+                        playTone({ freq: f * 1.5, duration: 0.25, type: 'triangle', volume: 0.4 });
+                    }, 300 + i * 60);
+                });
+                // 高音铃铛
+                setTimeout(() => playTone({ freq: 2093, duration: 0.5, type: 'sine', volume: 0.7 }), 700);
+            },
             bomb:   () => {
                 // 爆炸：大噪音 + 深低频下滑 + 延迟回响
                 playNoise({ duration: 0.6, volume: 1.5, filterFreq: 600 });
@@ -693,11 +707,12 @@
 
         // 气球类型配置
         const BALLOON_TYPES = [
-            { color: '#FF6B6B', gradient: ['#FF6B6B', '#C92A2A'], score: 10, weight: 35, name: '红色' },
-            { color: '#4ECDC4', gradient: ['#4ECDC4', '#0CA678'], score: 15, weight: 23, name: '青色' },
-            { color: '#FFD93D', gradient: ['#FFD93D', '#F08C00'], score: 20, weight: 16, name: '黄色' },
+            { color: '#FF6B6B', gradient: ['#FF6B6B', '#C92A2A'], score: 10, weight: 26, name: '红色' },
+            { color: '#4ECDC4', gradient: ['#4ECDC4', '#0CA678'], score: 15, weight: 18, name: '青色' },
+            { color: '#FFD93D', gradient: ['#FFD93D', '#F08C00'], score: 20, weight: 13, name: '黄色' },
             { color: '#A29BFE', gradient: ['#A29BFE', '#5F3DC4'], score: 50, weight: 6, name: '星星', isStar: true },
-            { color: '#FF69B4', gradient: ['#FF69B4', '#FF1493'], score: 100, weight: 3, name: '彩虹', isRainbow: true },
+            { color: '#FF69B4', gradient: ['#FF69B4', '#FF1493'], score: 100, weight: 10, name: '彩虹', isRainbow: true },
+            { color: '#FF4081', gradient: ['#FF80AB', '#C2185B'], score: 80, weight: 10, name: '爱心', isHeart: true },
             { color: '#00D9FF', gradient: ['#00D9FF', '#0066CC'], score: 5, weight: 5, name: '冰冻', isFreeze: true },
             { color: '#FF6FB5', gradient: ['#FF6FB5', '#D6336C'], score: 5, weight: 4, name: '双倍', isMultiplier: true },
             { color: '#90EE90', gradient: ['#90EE90', '#2F9E44'], score: 0, weight: 2, name: '时间', isTime: true },
@@ -973,12 +988,16 @@
                 ctx.rotate(this.rotation);
 
                 // 特殊气球脉冲发光
-                if (this.type.isStar || this.type.isBomb || this.type.isFreeze || this.type.isMultiplier || this.type.isTime || this.type.isRainbow) {
+                if (this.type.isStar || this.type.isBomb || this.type.isFreeze || this.type.isMultiplier || this.type.isTime || this.type.isRainbow || this.type.isHeart) {
                     const pulse = 0.5 + Math.sin(Date.now() * 0.006 + this.glowPhase) * 0.3;
                     if (this.type.isRainbow) {
                         // 彩虹气球：光环颜色随时间变化
                         const hue = (Date.now() * 0.2 + this.glowPhase * 60) % 360;
                         ctx.shadowColor = `hsl(${hue}, 100%, 60%)`;
+                        ctx.shadowBlur = 30 * pulse + 15;
+                    } else if (this.type.isHeart) {
+                        // 爱心气球：粉红双频脉冲
+                        ctx.shadowColor = '#FF4081';
                         ctx.shadowBlur = 30 * pulse + 15;
                     } else {
                         ctx.shadowColor = this.type.color;
@@ -1078,6 +1097,11 @@
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillText('🌈', 0, 0);
+                } else if (this.type.isHeart) {
+                    ctx.font = `${this.radius * 0.9}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('💖', 0, 0);
                 }
 
                 ctx.restore();
@@ -1186,6 +1210,54 @@
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
                 ctx.fill();
+                ctx.restore();
+            }
+
+            isDead() {
+                return this.life <= 0;
+            }
+        }
+
+        // ============ Emoji 粒子类（小爱心、小彩虹等）============
+        class EmojiParticle {
+            constructor(x, y, emoji, options = {}) {
+                this.x = x;
+                this.y = y;
+                this.emoji = emoji;
+                const angle = options.angle !== undefined ? options.angle : Math.random() * Math.PI * 2;
+                const speed = options.speed !== undefined ? options.speed : 4 + Math.random() * 6;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed - (options.upwardBias || 0);
+                this.gravity = options.gravity !== undefined ? options.gravity : 0.15;
+                this.life = options.life || 60;
+                this.maxLife = this.life;
+                this.size = options.size || (20 + Math.random() * 12);
+                this.rotation = (Math.random() - 0.5) * 0.5;
+                this.rotSpeed = (Math.random() - 0.5) * 0.15;
+                this.scalePhase = Math.random() * Math.PI * 2;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += this.gravity;
+                this.vx *= 0.98;
+                this.rotation += this.rotSpeed;
+                this.life--;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = Math.min(1, this.life / (this.maxLife * 0.6));
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+                // 轻微缩放呼吸
+                const scale = 1 + Math.sin(Date.now() * 0.01 + this.scalePhase) * 0.15;
+                ctx.scale(scale, scale);
+                ctx.font = `${this.size}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.emoji, 0, 0);
                 ctx.restore();
             }
 
@@ -1357,16 +1429,51 @@
                 gameState.flashTimer = 20;
                 sfx.time();
             } else if (balloon.type.isRainbow) {
-                // 彩虹气球：超高分 + 彩虹粒子爆炸 + 彩虹闪光
+                // 彩虹气球：超高分 + 小彩虹爆炸
                 gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '🌈 RAINBOW!', '#FF69B4'));
+                // 爆炸出 24 个小彩虹（径向 + 上升）
+                for (let i = 0; i < 24; i++) {
+                    const angle = (i / 24) * Math.PI * 2 + Math.random() * 0.3;
+                    gameState.particles.push(new EmojiParticle(balloon.x, balloon.y, '🌈', {
+                        angle, speed: 4 + Math.random() * 5,
+                        gravity: 0.1, life: 90,
+                        size: 22 + Math.random() * 16,
+                        upwardBias: 1
+                    }));
+                }
+                // 再补一些彩色小亮点
                 const rainbowColors = ['#FF0000', '#FF8800', '#FFDD00', '#00DD00', '#00DDFF', '#0088FF', '#8800FF'];
-                for (let i = 0; i < 30; i++) {
-                    const color = rainbowColors[i % rainbowColors.length];
-                    gameState.particles.push(new Sparkle(balloon.x, balloon.y, color));
+                for (let i = 0; i < 20; i++) {
+                    gameState.particles.push(new Sparkle(balloon.x, balloon.y, rainbowColors[i % rainbowColors.length]));
                 }
                 gameState.flashColor = `hsla(${(Date.now() * 0.1) % 360}, 100%, 60%, 0.35)`;
                 gameState.flashTimer = 25;
                 sfx.rainbow();
+            } else if (balloon.type.isHeart) {
+                // 爱心气球：大量小爱心爆炸 + 粉色闪光 + 额外奖励
+                gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '💖 LOVE!', '#FF4081'));
+                // 多种爱心 emoji 随机出现
+                const hearts = ['❤️', '💖', '💕', '💗', '💓', '💞', '💘'];
+                for (let i = 0; i < 28; i++) {
+                    const angle = (i / 28) * Math.PI * 2 + Math.random() * 0.4;
+                    gameState.particles.push(new EmojiParticle(
+                        balloon.x, balloon.y,
+                        hearts[Math.floor(Math.random() * hearts.length)],
+                        {
+                            angle, speed: 3 + Math.random() * 5,
+                            gravity: 0.08, life: 100,
+                            size: 20 + Math.random() * 18,
+                            upwardBias: 1.5
+                        }
+                    ));
+                }
+                // 粉色亮点粒子
+                for (let i = 0; i < 15; i++) {
+                    gameState.particles.push(new Sparkle(balloon.x, balloon.y, '#FF80AB'));
+                }
+                gameState.flashColor = 'rgba(255, 64, 129, 0.35)';
+                gameState.flashTimer = 25;
+                sfx.heart();
             } else {
                 sfx.pop();
             }
