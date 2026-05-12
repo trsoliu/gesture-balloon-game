@@ -31,9 +31,8 @@
 
 ## 🚀 在线游玩
 
-[👉 点这里开始游戏](https://YOUR_USERNAME.github.io/gesture-balloon-game/)
+[👉 点这里开始游戏](https://trsoliu.github.io/gesture-balloon-game/)
 
-> 部署后记得把上面链接里的 `YOUR_USERNAME` 换成你自己的 GitHub 用户名。
 
 ## 💻 本地运行
 
