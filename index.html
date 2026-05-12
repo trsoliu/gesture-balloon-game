@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>手势抓气球游戏</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.4.1675469240/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
     <style>
         * {
             margin: 0;
@@ -151,6 +151,7 @@
                 <div>⏰ 时间气球 - +5秒额外时间</div>
                 <div>🔥 连击奖励 - 连续抓取获得额外分数</div>
             </div>
+            <div id="loadingStatus" style="font-size: 14px; color: #aaa; margin: 10px 0;"></div>
             <button id="startBtn">开始游戏</button>
         </div>
 
@@ -228,20 +229,48 @@
         window.addEventListener('resize', resizeCanvas);
 
         // ============ MediaPipe 手势识别 ============
-        const hands = new Hands({
-            locateFile: (file) => {
-                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        const MEDIAPIPE_VERSION = '0.4.1675469240';
+        let hands;
+        let camera;
+        let mediapipeReady = false;
+
+        async function initMediaPipe() {
+            const statusEl = document.getElementById('loadingStatus');
+            try {
+                statusEl.textContent = '正在加载手势识别模型...';
+
+                hands = new Hands({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@${MEDIAPIPE_VERSION}/${file}`;
+                    }
+                });
+
+                hands.setOptions({
+                    maxNumHands: 1,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.7,
+                    minTrackingConfidence: 0.5
+                });
+
+                hands.onResults(onHandResults);
+
+                // 发送一帧空白图像来触发模型加载
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = 1;
+                tempCanvas.height = 1;
+                await hands.send({ image: tempCanvas });
+
+                mediapipeReady = true;
+                statusEl.textContent = '模型加载完成！点击开始游戏';
+                statusEl.style.color = '#4ECDC4';
+            } catch (err) {
+                console.error('MediaPipe 初始化失败:', err);
+                statusEl.textContent = '模型加载失败，请刷新页面重试';
+                statusEl.style.color = '#FF6B6B';
             }
-        });
+        }
 
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.5
-        });
-
-        hands.onResults(onHandResults);
+        initMediaPipe();
 
         function onHandResults(results) {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
@@ -343,14 +372,7 @@
             return isFist;
         }
 
-        // 启动摄像头
-        const camera = new Camera(video, {
-            onFrame: async () => {
-                await hands.send({ image: video });
-            },
-            width: 1280,
-            height: 720
-        });
+        // 摄像头在 startGame 中初始化
 
         // ============ 气球类 ============
         class Balloon {
@@ -937,8 +959,20 @@
 
         // ============ 游戏控制 ============
         async function startGame() {
+            if (!mediapipeReady) {
+                alert('手势识别模型尚未加载完成，请稍候再试。');
+                return;
+            }
+
             try {
-                // 启动摄像头
+                // 初始化并启动摄像头
+                camera = new Camera(video, {
+                    onFrame: async () => {
+                        await hands.send({ image: video });
+                    },
+                    width: 1280,
+                    height: 720
+                });
                 await camera.start();
             } catch (err) {
                 alert('无法访问摄像头！请确保浏览器有权限访问摄像头。\n错误: ' + err.message);
