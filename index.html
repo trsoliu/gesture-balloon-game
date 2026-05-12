@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手势抓气球游戏</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #videoElement {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            opacity: 0.3;
+        }
+
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 24px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
+        #timer {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            font-size: 32px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            z-index: 20;
+        }
+
+        h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 24px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: scale(1.1);
+        }
+
+        .instruction {
+            font-size: 18px;
+            margin: 10px 0;
+            max-width: 600px;
+            text-align: center;
+        }
+
+        #handStatus {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <video id="videoElement" autoplay playsinline></video>
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="ui">
+            <div>得分: <span id="score">0</span></div>
+            <div>等级: <span id="level">1</span></div>
+            <div id="comboDisplay" style="display: none; color: #FFD93D; font-size: 28px; margin-top: 10px;">
+                🔥 <span id="combo">0</span> COMBO!
+            </div>
+            <div id="effectsDisplay" style="margin-top: 10px; font-size: 18px;">
+                <div id="multiplierEffect" style="display: none; color: #FF6FB5;">×2 双倍分数</div>
+                <div id="freezeEffect" style="display: none; color: #00D9FF;">❄ 冰冻中</div>
+            </div>
+        </div>
+
+        <div id="timer">60</div>
+        <div id="handStatus">手势: 检测中...</div>
+
+        <div id="startScreen">
+            <h1>🎈 手势抓气球 🎈</h1>
+            <p class="instruction">✋ 张开手掌 → ✊ 握拳 = 抓取气球</p>
+            <p class="instruction">必须完成"张开→握拳"的完整动作才能抓取！</p>
+            <div style="font-size: 16px; margin: 15px 0; line-height: 1.8;">
+                <div>🔴 普通气球 +10 &nbsp;&nbsp; 🟢 +15 &nbsp;&nbsp; 🟡 +20</div>
+                <div>⭐ 星星 +50分 &nbsp;&nbsp; 💣 炸弹 -30分！</div>
+                <div>❄ 冰冻气球 - 让所有气球减速</div>
+                <div>×2 双倍气球 - 8秒内分数翻倍</div>
+                <div>⏰ 时间气球 - +5秒额外时间</div>
+                <div>🔥 连击奖励 - 连续抓取获得额外分数</div>
+            </div>
+            <button id="startBtn">开始游戏</button>
+        </div>
+
+        <div id="gameOverScreen" style="display: none;">
+            <h1>游戏结束！</h1>
+            <p class="instruction" style="font-size: 28px;">最终得分: <span id="finalScore">0</span></p>
+            <p class="instruction">抓到气球: <span id="balloonsCaught">0</span> 个</p>
+            <p class="instruction">最高连击: <span id="maxComboDisplay">0</span> 🔥</p>
+            <button id="restartBtn">再玩一次</button>
+        </div>
+    </div>
+
+    <script>
+        // 游戏状态
+        const gameState = {
+            running: false,
+            score: 0,
+            level: 1,
+            timeLeft: 60,
+            balloonsCaught: 0,
+            balloons: [],
+            particles: [],
+            handPosition: null,
+            handClosed: false,
+            grabbedBalloon: null,
+            lastHandClosed: false,
+            spawnRate: 1500,
+            lastSpawn: 0,
+            balloonSpeed: 1,
+            // 新增：连击系统
+            combo: 0,
+            comboTimer: 0,
+            maxCombo: 0,
+            // 新增：特殊效果
+            scoreMultiplier: 1,       // 双倍分数效果
+            multiplierTimer: 0,
+            freezeTimer: 0,           // 冰冻效果（气球减速）
+            shakeTimer: 0,            // 屏幕震动
+            flashColor: null,         // 屏幕闪光颜色
+            flashTimer: 0,
+            debugMode: false
+        };
+
+        // 气球类型配置
+        const BALLOON_TYPES = [
+            { color: '#FF6B6B', gradient: ['#FF6B6B', '#C92A2A'], score: 10, weight: 38, name: '红色' },
+            { color: '#4ECDC4', gradient: ['#4ECDC4', '#0CA678'], score: 15, weight: 25, name: '青色' },
+            { color: '#FFD93D', gradient: ['#FFD93D', '#F08C00'], score: 20, weight: 18, name: '黄色' },
+            { color: '#A29BFE', gradient: ['#A29BFE', '#5F3DC4'], score: 50, weight: 6, name: '星星', isStar: true },
+            { color: '#00D9FF', gradient: ['#00D9FF', '#0066CC'], score: 5, weight: 5, name: '冰冻', isFreeze: true },
+            { color: '#FF6FB5', gradient: ['#FF6FB5', '#D6336C'], score: 5, weight: 4, name: '双倍', isMultiplier: true },
+            { color: '#90EE90', gradient: ['#90EE90', '#2F9E44'], score: 0, weight: 2, name: '时间', isTime: true },
+            { color: '#FF3838', gradient: ['#FF3838', '#000000'], score: -30, weight: 2, name: '炸弹', isBomb: true }
+        ];
+
+        // 获取元素
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const video = document.getElementById('videoElement');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const scoreEl = document.getElementById('score');
+        const levelEl = document.getElementById('level');
+        const timerEl = document.getElementById('timer');
+        const handStatusEl = document.getElementById('handStatus');
+        const finalScoreEl = document.getElementById('finalScore');
+        const balloonsCaughtEl = document.getElementById('balloonsCaught');
+
+        // 设置画布大小
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // ============ MediaPipe 手势识别 ============
+        const hands = new Hands({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onHandResults);
+
+        function onHandResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+
+                // 计算手掌中心位置（使用手腕和中指根部的中点）
+                const palmCenter = {
+                    x: (landmarks[0].x + landmarks[9].x) / 2,
+                    y: (landmarks[0].y + landmarks[9].y) / 2
+                };
+
+                // 镜像翻转 x 坐标 (因为视频是镜像的)
+                gameState.handPosition = {
+                    x: (1 - palmCenter.x) * canvas.width,
+                    y: palmCenter.y * canvas.height
+                };
+
+                // 检测握拳手势
+                // 通过检查指尖到手腕的距离来判断手是否握紧
+                gameState.handClosed = detectFist(landmarks);
+
+                // 保存所有指尖位置用于渲染
+                gameState.handLandmarks = landmarks.map(p => ({
+                    x: (1 - p.x) * canvas.width,
+                    y: p.y * canvas.height
+                }));
+
+                handStatusEl.textContent = `手势: ${gameState.handClosed ? '✊ 握拳' : '✋ 张开'}`;
+            } else {
+                gameState.handPosition = null;
+                gameState.handLandmarks = null;
+                gameState.handClosed = false;
+                handStatusEl.textContent = '手势: 未检测到手';
+            }
+        }
+
+        // 检测是否握拳
+        // 使用"手指弯曲角度"+"指尖聚拢度"双重判定
+        function detectFist(landmarks) {
+            const wrist = landmarks[0];
+
+            // ===== 判定1: 每个手指必须明显弯曲 =====
+            // 对每根手指，计算 tip-pip-mcp 三点构成的角度
+            // 伸直手指时角度接近180°，弯曲时角度明显变小
+            const fingers = [
+                { tip: 8,  pip: 6,  mcp: 5  }, // 食指
+                { tip: 12, pip: 10, mcp: 9  }, // 中指
+                { tip: 16, pip: 14, mcp: 13 }, // 无名指
+                { tip: 20, pip: 18, mcp: 17 }  // 小指
+            ];
+
+            let bentCount = 0;
+            for (const f of fingers) {
+                const tip = landmarks[f.tip];
+                const pip = landmarks[f.pip];
+                const mcp = landmarks[f.mcp];
+
+                // 向量 pip->mcp 和 pip->tip
+                const v1x = mcp.x - pip.x, v1y = mcp.y - pip.y;
+                const v2x = tip.x - pip.x, v2y = tip.y - pip.y;
+                const dot = v1x * v2x + v1y * v2y;
+                const mag1 = Math.hypot(v1x, v1y);
+                const mag2 = Math.hypot(v2x, v2y);
+                const cosAngle = dot / (mag1 * mag2 + 1e-6);
+                // cosAngle ≈ -1 表示手指伸直(角度180°)，≈ 1 表示弯曲(角度0°)
+                // 当角度 < 100° 时认为弯曲 (cosAngle > cos(100°) ≈ -0.17)
+                if (cosAngle > -0.3) {
+                    bentCount++;
+                }
+            }
+
+            // ===== 判定2: 所有指尖必须聚拢（相对于手掌大小）=====
+            const middleMCP = landmarks[9];
+            const palmSize = Math.hypot(wrist.x - middleMCP.x, wrist.y - middleMCP.y);
+
+            // 计算4个指尖的平均距离到手掌中心
+            const palmCenterX = (wrist.x + middleMCP.x) / 2;
+            const palmCenterY = (wrist.y + middleMCP.y) / 2;
+
+            let avgTipDist = 0;
+            for (const f of fingers) {
+                const tip = landmarks[f.tip];
+                avgTipDist += Math.hypot(tip.x - palmCenterX, tip.y - palmCenterY);
+            }
+            avgTipDist /= fingers.length;
+
+            // 指尖到手掌中心距离 / 手掌大小 的比值
+            // 伸直时约 2.0+，握拳时约 1.0 或更小
+            const tipRatio = avgTipDist / (palmSize + 1e-6);
+
+            // 必须满足: 至少3根手指弯曲 AND 指尖聚拢（比值 < 1.3）
+            const isFist = bentCount >= 3 && tipRatio < 1.3;
+
+            // 调试信息
+            if (gameState.debugMode) {
+                console.log(`bent: ${bentCount}/4, tipRatio: ${tipRatio.toFixed(2)}, isFist: ${isFist}`);
+            }
+
+            return isFist;
+        }
+
+        // 启动摄像头
+        const camera = new Camera(video, {
+            onFrame: async () => {
+                await hands.send({ image: video });
+            },
+            width: 1280,
+            height: 720
+        });
+
+        // ============ 气球类 ============
+        class Balloon {
+            constructor(type) {
+                this.type = type;
+                this.x = Math.random() * (canvas.width - 100) + 50;
+                this.y = canvas.height + 50;
+                this.radius = 35 + Math.random() * 15;
+                this.speed = (1 + Math.random() * 0.5) * gameState.balloonSpeed;
+                this.swayAmplitude = 30 + Math.random() * 40;
+                this.swayFrequency = 0.001 + Math.random() * 0.002;
+                this.swayOffset = Math.random() * Math.PI * 2;
+                this.baseX = this.x;
+                this.rotation = (Math.random() - 0.5) * 0.2;
+                this.grabbed = false;
+                this.popped = false;
+                this.popFrame = 0;
+                this.stringLength = 80 + Math.random() * 40;
+            }
+
+            update(deltaTime) {
+                if (this.popped) {
+                    this.popFrame++;
+                    return;
+                }
+
+                // 冰冻效果：气球速度减半
+                const speedMultiplier = gameState.freezeTimer > 0 ? 0.3 : 1;
+
+                if (this.grabbed && gameState.handPosition) {
+                    this.x = gameState.handPosition.x;
+                    this.y = gameState.handPosition.y;
+                } else {
+                    this.y -= this.speed * speedMultiplier;
+                    this.x = this.baseX + Math.sin(Date.now() * this.swayFrequency + this.swayOffset) * this.swayAmplitude;
+                    this.rotation = Math.sin(Date.now() * this.swayFrequency + this.swayOffset) * 0.1;
+                }
+            }
+
+            draw(ctx) {
+                if (this.popped) {
+                    this.drawPopEffect(ctx);
+                    return;
+                }
+
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+
+                // 画绳子
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, this.radius);
+                ctx.quadraticCurveTo(
+                    Math.sin(Date.now() * 0.003) * 10,
+                    this.radius + this.stringLength / 2,
+                    Math.sin(Date.now() * 0.002) * 5,
+                    this.radius + this.stringLength
+                );
+                ctx.stroke();
+
+                // 画气球阴影
+                ctx.shadowColor = 'rgba(0,0,0,0.3)';
+                ctx.shadowBlur = 15;
+                ctx.shadowOffsetY = 5;
+
+                // 画气球本体（径向渐变）
+                const gradient = ctx.createRadialGradient(
+                    -this.radius * 0.3, -this.radius * 0.3, this.radius * 0.1,
+                    0, 0, this.radius
+                );
+                gradient.addColorStop(0, this.type.gradient[0]);
+                gradient.addColorStop(1, this.type.gradient[1]);
+
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.radius * 0.9, this.radius, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.shadowColor = 'transparent';
+
+                // 画高光
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.beginPath();
+                ctx.ellipse(-this.radius * 0.3, -this.radius * 0.3, this.radius * 0.2, this.radius * 0.3, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 画气球底部小三角
+                ctx.fillStyle = this.type.gradient[1];
+                ctx.beginPath();
+                ctx.moveTo(-5, this.radius - 2);
+                ctx.lineTo(5, this.radius - 2);
+                ctx.lineTo(0, this.radius + 8);
+                ctx.closePath();
+                ctx.fill();
+
+                // 特殊气球标记
+                if (this.type.isBomb) {
+                    ctx.fillStyle = 'white';
+                    ctx.font = `bold ${this.radius * 0.8}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('💣', 0, 0);
+                } else if (this.type.isStar) {
+                    ctx.fillStyle = 'gold';
+                    ctx.font = `bold ${this.radius * 0.7}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('★', 0, 0);
+                } else if (this.type.isFreeze) {
+                    ctx.font = `${this.radius * 0.8}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('❄', 0, 0);
+                } else if (this.type.isMultiplier) {
+                    ctx.fillStyle = 'white';
+                    ctx.font = `bold ${this.radius * 0.6}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('×2', 0, 0);
+                } else if (this.type.isTime) {
+                    ctx.font = `${this.radius * 0.8}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('⏰', 0, 0);
+                }
+
+                ctx.restore();
+            }
+
+            drawPopEffect(ctx) {
+                // 爆炸粒子效果
+                const maxFrames = 20;
+                if (this.popFrame < maxFrames) {
+                    const progress = this.popFrame / maxFrames;
+                    ctx.save();
+                    ctx.globalAlpha = 1 - progress;
+                    for (let i = 0; i < 12; i++) {
+                        const angle = (i / 12) * Math.PI * 2;
+                        const distance = progress * 80;
+                        const px = this.x + Math.cos(angle) * distance;
+                        const py = this.y + Math.sin(angle) * distance;
+                        ctx.fillStyle = this.type.color;
+                        ctx.beginPath();
+                        ctx.arc(px, py, (1 - progress) * 8, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                }
+            }
+
+            isDead() {
+                if (this.popped && this.popFrame >= 20) return true;
+                if (this.y < -100) return true;
+                return false;
+            }
+
+            checkCollision(handPos) {
+                if (!handPos) return false;
+                const dx = this.x - handPos.x;
+                const dy = this.y - handPos.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                // 扩大碰撞范围，让抓取更容易（气球半径 + 手的判定半径60）
+                return distance < this.radius + 60;
+            }
+        }
+
+        // ============ 浮动文字（得分提示）类 ============
+        class FloatingText {
+            constructor(x, y, text, color) {
+                this.x = x;
+                this.y = y;
+                this.text = text;
+                this.color = color;
+                this.life = 60;
+                this.maxLife = 60;
+            }
+
+            update() {
+                this.y -= 2;
+                this.life--;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = this.life / this.maxLife;
+                ctx.fillStyle = this.color;
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 3;
+                ctx.font = 'bold 36px Arial';
+                ctx.textAlign = 'center';
+                ctx.strokeText(this.text, this.x, this.y);
+                ctx.fillText(this.text, this.x, this.y);
+                ctx.restore();
+            }
+
+            isDead() {
+                return this.life <= 0;
+            }
+        }
+
+        // ============ 闪光粒子类 ============
+        class Sparkle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 3 + Math.random() * 5;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.life = 40;
+                this.maxLife = 40;
+                this.size = 3 + Math.random() * 4;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.2; // 重力
+                this.vx *= 0.97;
+                this.life--;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = this.life / this.maxLife;
+                ctx.fillStyle = this.color;
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            isDead() {
+                return this.life <= 0;
+            }
+        }
+
+        // ============ 气球生成 ============
+        function spawnBalloon() {
+            const totalWeight = BALLOON_TYPES.reduce((sum, t) => sum + t.weight, 0);
+            let rand = Math.random() * totalWeight;
+            let selectedType = BALLOON_TYPES[0];
+
+            for (const type of BALLOON_TYPES) {
+                rand -= type.weight;
+                if (rand <= 0) {
+                    selectedType = type;
+                    break;
+                }
+            }
+
+            gameState.balloons.push(new Balloon(selectedType));
+        }
+
+        // ============ 抓取逻辑 ============
+        // 必须执行"张开→握拳"的动作才算抓取
+        // 仅在刚握拳的瞬间检测碰撞，避免持续握拳时一碰到就抓到
+        function handleGrabbing() {
+            if (!gameState.handPosition) return;
+
+            const justClosed = gameState.handClosed && !gameState.lastHandClosed;
+
+            if (justClosed) {
+                // 触发"抓取"动作：检测周围所有气球
+                let grabbedAny = false;
+                for (const balloon of gameState.balloons) {
+                    if (!balloon.popped && balloon.checkCollision(gameState.handPosition)) {
+                        popBalloon(balloon);
+                        grabbedAny = true;
+                        // 连续抓取奖励: 一次握拳可以抓到范围内多个气球
+                        // 只抓最多3个避免过于强大
+                        if (gameState.balloons.filter(b => b.popped).length >= 3) break;
+                    }
+                }
+
+                if (grabbedAny) {
+                    // 成功抓到：增加连击
+                    gameState.combo++;
+                    gameState.comboTimer = 120; // 2秒内再抓到算连击
+                } else {
+                    // 空手：显示"miss"提示
+                    gameState.particles.push(new FloatingText(
+                        gameState.handPosition.x,
+                        gameState.handPosition.y - 40,
+                        '空手!',
+                        '#888888'
+                    ));
+                }
+            }
+
+            gameState.lastHandClosed = gameState.handClosed;
+        }
+
+        // 处理气球被抓到（得分）
+        function popBalloon(balloon) {
+            if (balloon.popped) return;
+            balloon.popped = true;
+
+            // 计算最终分数（应用倍率）
+            let rawScore = balloon.type.score;
+            let finalScore = rawScore;
+            if (rawScore > 0 && gameState.scoreMultiplier > 1) {
+                finalScore = rawScore * gameState.scoreMultiplier;
+            }
+
+            // 连击加成：每3连击 +10% 额外分数
+            if (gameState.combo >= 3 && finalScore > 0) {
+                const comboBonus = Math.floor(finalScore * (gameState.combo * 0.1));
+                finalScore += comboBonus;
+            }
+
+            gameState.score += finalScore;
+            gameState.balloonsCaught++;
+
+            // 创建得分文字效果
+            const scoreText = finalScore >= 0 ? `+${finalScore}` : `${finalScore}`;
+            const scoreColor = finalScore >= 0 ? '#FFD93D' : '#FF3838';
+            gameState.particles.push(new FloatingText(balloon.x, balloon.y, scoreText, scoreColor));
+
+            // ===== 处理特殊气球效果 =====
+            if (balloon.type.isBomb) {
+                // 炸弹：扣分 + 屏幕震动 + 红色闪光 + 连击清零
+                gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '💥 BOOM!', '#FF3838'));
+                gameState.shakeTimer = 30;
+                gameState.flashColor = 'rgba(255, 0, 0, 0.4)';
+                gameState.flashTimer = 20;
+                gameState.combo = 0;
+            } else if (balloon.type.isStar) {
+                // 星星：额外特效 + 金色闪光
+                gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '⭐ BONUS!', 'gold'));
+                gameState.flashColor = 'rgba(255, 215, 0, 0.3)';
+                gameState.flashTimer = 15;
+                // 额外生成金色粒子
+                for (let i = 0; i < 15; i++) {
+                    gameState.particles.push(new Sparkle(balloon.x, balloon.y, 'gold'));
+                }
+            } else if (balloon.type.isFreeze) {
+                // 冰冻：所有气球减速5秒
+                gameState.freezeTimer = 300; // 5秒
+                gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '❄ 冰冻!', '#00D9FF'));
+                gameState.flashColor = 'rgba(0, 217, 255, 0.3)';
+                gameState.flashTimer = 20;
+            } else if (balloon.type.isMultiplier) {
+                // 双倍：分数x2 持续8秒
+                gameState.scoreMultiplier = 2;
+                gameState.multiplierTimer = 480;
+                gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '×2 双倍分数!', '#FF6FB5'));
+                gameState.flashColor = 'rgba(255, 111, 181, 0.3)';
+                gameState.flashTimer = 20;
+            } else if (balloon.type.isTime) {
+                // 时间：+5秒
+                gameState.timeLeft += 5;
+                gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '+5秒!', '#90EE90'));
+                gameState.flashColor = 'rgba(144, 238, 144, 0.3)';
+                gameState.flashTimer = 20;
+            }
+
+            // 连击提示
+            if (!balloon.type.isBomb && gameState.combo >= 3) {
+                gameState.particles.push(new FloatingText(
+                    balloon.x,
+                    balloon.y - 80,
+                    `${gameState.combo} COMBO!`,
+                    '#FFD93D'
+                ));
+            }
+
+            gameState.score = Math.max(0, gameState.score);
+            updateUI();
+        }
+
+        // ============ 绘制手部光标 ============
+        function drawHandCursor() {
+            if (!gameState.handPosition) return;
+
+            const { x, y } = gameState.handPosition;
+
+            // 绘制手部骨架（如果可用）
+            if (gameState.handLandmarks) {
+                ctx.strokeStyle = gameState.handClosed ? 'rgba(255, 100, 100, 0.6)' : 'rgba(100, 255, 200, 0.6)';
+                ctx.lineWidth = 2;
+
+                // 手指连接定义
+                const connections = [
+                    [0, 1], [1, 2], [2, 3], [3, 4],       // 拇指
+                    [0, 5], [5, 6], [6, 7], [7, 8],       // 食指
+                    [5, 9], [9, 10], [10, 11], [11, 12],  // 中指
+                    [9, 13], [13, 14], [14, 15], [15, 16],// 无名指
+                    [13, 17], [17, 18], [18, 19], [19, 20],// 小指
+                    [0, 17]                                // 手掌
+                ];
+
+                ctx.beginPath();
+                for (const [a, b] of connections) {
+                    ctx.moveTo(gameState.handLandmarks[a].x, gameState.handLandmarks[a].y);
+                    ctx.lineTo(gameState.handLandmarks[b].x, gameState.handLandmarks[b].y);
+                }
+                ctx.stroke();
+
+                // 绘制每个关键点
+                ctx.fillStyle = gameState.handClosed ? '#FF6464' : '#64FFCC';
+                for (const point of gameState.handLandmarks) {
+                    ctx.beginPath();
+                    ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // 绘制手掌中心圆圈（指示器）
+            ctx.save();
+            const pulseSize = Math.sin(Date.now() * 0.005) * 5;
+
+            if (gameState.handClosed) {
+                // 握拳状态 - 红色实心
+                ctx.fillStyle = 'rgba(255, 100, 100, 0.4)';
+                ctx.strokeStyle = '#FF6464';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(x, y, 25 + pulseSize, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            } else {
+                // 张开状态 - 绿色虚线
+                ctx.strokeStyle = '#64FFCC';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.arc(x, y, 35 + pulseSize, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            ctx.restore();
+        }
+
+        // ============ 更新UI ============
+        function updateUI() {
+            scoreEl.textContent = gameState.score;
+            levelEl.textContent = gameState.level;
+            timerEl.textContent = Math.ceil(gameState.timeLeft);
+
+            // 连击显示
+            const comboDisplay = document.getElementById('comboDisplay');
+            const comboEl = document.getElementById('combo');
+            if (gameState.combo >= 2) {
+                comboDisplay.style.display = 'block';
+                comboEl.textContent = gameState.combo;
+            } else {
+                comboDisplay.style.display = 'none';
+            }
+
+            // 双倍分数显示
+            document.getElementById('multiplierEffect').style.display =
+                gameState.multiplierTimer > 0 ? 'block' : 'none';
+
+            // 冰冻显示
+            document.getElementById('freezeEffect').style.display =
+                gameState.freezeTimer > 0 ? 'block' : 'none';
+        }
+
+        // ============ 难度递增 ============
+        function updateDifficulty() {
+            // 每过15秒提升一个等级
+            const elapsedSeconds = 60 - gameState.timeLeft;
+            const newLevel = Math.floor(elapsedSeconds / 15) + 1;
+
+            if (newLevel > gameState.level) {
+                gameState.level = newLevel;
+                gameState.spawnRate = Math.max(500, 1500 - (gameState.level - 1) * 250);
+                gameState.balloonSpeed = 1 + (gameState.level - 1) * 0.3;
+
+                // 显示等级提升提示
+                gameState.particles.push(new FloatingText(
+                    canvas.width / 2,
+                    canvas.height / 2,
+                    `等级 ${gameState.level}!`,
+                    '#FFD93D'
+                ));
+            }
+        }
+
+        // ============ 游戏主循环 ============
+        let lastFrameTime = 0;
+        function gameLoop(timestamp) {
+            if (!gameState.running) return;
+
+            const deltaTime = timestamp - lastFrameTime;
+            lastFrameTime = timestamp;
+
+            // 清空画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 屏幕震动
+            ctx.save();
+            if (gameState.shakeTimer > 0) {
+                const shakeAmount = gameState.shakeTimer / 2;
+                const shakeX = (Math.random() - 0.5) * shakeAmount;
+                const shakeY = (Math.random() - 0.5) * shakeAmount;
+                ctx.translate(shakeX, shakeY);
+                gameState.shakeTimer--;
+            }
+
+            // 更新时间
+            gameState.timeLeft -= deltaTime / 1000;
+            if (gameState.timeLeft <= 0) {
+                gameState.timeLeft = 0;
+                endGame();
+                return;
+            }
+
+            // 更新各种定时器（按帧数）
+            if (gameState.multiplierTimer > 0) gameState.multiplierTimer--;
+            else gameState.scoreMultiplier = 1;
+
+            if (gameState.freezeTimer > 0) gameState.freezeTimer--;
+
+            if (gameState.comboTimer > 0) {
+                gameState.comboTimer--;
+            } else if (gameState.combo > 0) {
+                // 连击超时，重置
+                gameState.maxCombo = Math.max(gameState.maxCombo, gameState.combo);
+                gameState.combo = 0;
+            }
+
+            // 更新难度
+            updateDifficulty();
+
+            // 生成气球
+            if (timestamp - gameState.lastSpawn > gameState.spawnRate) {
+                spawnBalloon();
+                gameState.lastSpawn = timestamp;
+            }
+
+            // 处理抓取
+            handleGrabbing();
+
+            // 更新和绘制气球
+            for (const balloon of gameState.balloons) {
+                balloon.update(deltaTime);
+                balloon.draw(ctx);
+            }
+            gameState.balloons = gameState.balloons.filter(b => !b.isDead());
+
+            // 更新和绘制粒子
+            for (const particle of gameState.particles) {
+                particle.update();
+                particle.draw(ctx);
+            }
+            gameState.particles = gameState.particles.filter(p => !p.isDead());
+
+            // 绘制手部光标
+            drawHandCursor();
+
+            ctx.restore(); // 结束屏幕震动变换
+
+            // 屏幕闪光效果（不受震动影响）
+            if (gameState.flashTimer > 0 && gameState.flashColor) {
+                ctx.save();
+                ctx.globalAlpha = gameState.flashTimer / 20;
+                ctx.fillStyle = gameState.flashColor;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.restore();
+                gameState.flashTimer--;
+            }
+
+            // 冰冻时全屏蓝色 overlay
+            if (gameState.freezeTimer > 0) {
+                ctx.save();
+                ctx.globalAlpha = 0.1 + Math.sin(Date.now() * 0.005) * 0.05;
+                ctx.fillStyle = '#00D9FF';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.restore();
+            }
+
+            // 更新UI
+            updateUI();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ============ 游戏控制 ============
+        async function startGame() {
+            try {
+                // 启动摄像头
+                await camera.start();
+            } catch (err) {
+                alert('无法访问摄像头！请确保浏览器有权限访问摄像头。\n错误: ' + err.message);
+                return;
+            }
+
+            // 重置游戏状态
+            gameState.running = true;
+            gameState.score = 0;
+            gameState.level = 1;
+            gameState.timeLeft = 60;
+            gameState.balloonsCaught = 0;
+            gameState.balloons = [];
+            gameState.particles = [];
+            gameState.spawnRate = 1500;
+            gameState.balloonSpeed = 1;
+            gameState.lastSpawn = 0;
+            gameState.grabbedBalloon = null;
+            gameState.combo = 0;
+            gameState.comboTimer = 0;
+            gameState.maxCombo = 0;
+            gameState.scoreMultiplier = 1;
+            gameState.multiplierTimer = 0;
+            gameState.freezeTimer = 0;
+            gameState.shakeTimer = 0;
+            gameState.flashColor = null;
+            gameState.flashTimer = 0;
+            gameState.lastHandClosed = false;
+
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+
+            lastFrameTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            gameState.running = false;
+            // 更新最大连击
+            gameState.maxCombo = Math.max(gameState.maxCombo, gameState.combo);
+            finalScoreEl.textContent = gameState.score;
+            balloonsCaughtEl.textContent = gameState.balloonsCaught;
+            document.getElementById('maxComboDisplay').textContent = gameState.maxCombo;
+            gameOverScreen.style.display = 'flex';
+        }
+
+        // 按钮事件
+        document.getElementById('startBtn').addEventListener('click', startGame);
+        document.getElementById('restartBtn').addEventListener('click', startGame);
+    </script>
+</body>
+</html>
