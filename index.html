@@ -117,6 +117,128 @@
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
             z-index: 10;
         }
+
+        /* 控制面板 */
+        #controlPanel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 15px;
+            color: white;
+            z-index: 15;
+            min-width: 220px;
+            font-size: 14px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transform: translateX(calc(100% + 30px));
+            transition: transform 0.3s ease;
+        }
+        #controlPanel.open {
+            transform: translateX(0);
+        }
+        #panelToggle {
+            position: absolute;
+            top: 70px;
+            right: 20px;
+            width: 44px;
+            height: 44px;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            z-index: 16;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+        #panelToggle:hover { transform: rotate(45deg); }
+        #controlPanel h3 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .control-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 10px 0;
+            gap: 10px;
+        }
+        .control-row label { flex: 1; font-size: 13px; }
+        .control-row input[type="range"] {
+            flex: 1.5;
+            accent-color: #667eea;
+        }
+        .control-row input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #667eea;
+            cursor: pointer;
+        }
+        .control-row select {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .control-row span.value {
+            min-width: 30px;
+            text-align: right;
+            font-size: 12px;
+            color: #4ECDC4;
+        }
+
+        /* 气球抓取时的缩放动画 */
+        @keyframes scorePopIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { transform: scale(1.3); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        #score, #level, #timer {
+            display: inline-block;
+            transition: transform 0.15s ease-out;
+        }
+        .score-pop {
+            animation: scorePopIn 0.3s ease-out;
+        }
+        /* 按钮点击动效 */
+        button:active { transform: scale(0.95); }
+        button {
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        button:hover {
+            box-shadow: 0 6px 25px rgba(102, 126, 234, 0.6);
+        }
+        /* 开始/结束界面淡入 */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        #startScreen, #gameOverScreen {
+            animation: fadeIn 0.4s ease-out;
+        }
+        /* 标题发光呼吸 */
+        @keyframes titleGlow {
+            0%, 100% { text-shadow: 0 0 20px rgba(255, 215, 61, 0.5); }
+            50% { text-shadow: 0 0 40px rgba(255, 215, 61, 0.9), 0 0 60px rgba(255, 107, 107, 0.6); }
+        }
+        h1 {
+            animation: titleGlow 2s ease-in-out infinite;
+        }
     </style>
 </head>
 <body>
@@ -138,6 +260,62 @@
 
         <div id="timer">60</div>
         <div id="handStatus">手势: 检测中...</div>
+
+        <button id="panelToggle" title="设置">⚙</button>
+        <div id="controlPanel">
+            <h3>🎛 控制面板</h3>
+            <div class="control-row">
+                <label for="soundToggle">🔊 音效</label>
+                <input type="checkbox" id="soundToggle" checked>
+            </div>
+            <div class="control-row">
+                <label for="volumeSlider">音量</label>
+                <input type="range" id="volumeSlider" min="0" max="100" value="60">
+                <span class="value" id="volumeValue">60</span>
+            </div>
+            <div class="control-row">
+                <label for="bgmToggle">🎵 背景音乐</label>
+                <input type="checkbox" id="bgmToggle" checked>
+            </div>
+            <div class="control-row">
+                <label for="difficultySelect">🎯 难度</label>
+                <select id="difficultySelect">
+                    <option value="easy">简单</option>
+                    <option value="normal" selected>普通</option>
+                    <option value="hard">困难</option>
+                </select>
+            </div>
+            <div class="control-row">
+                <label for="gameDuration">⏱ 时长</label>
+                <select id="gameDuration">
+                    <option value="30">30秒</option>
+                    <option value="60" selected>60秒</option>
+                    <option value="90">90秒</option>
+                    <option value="120">120秒</option>
+                </select>
+            </div>
+            <div class="control-row">
+                <label for="maxHandsSelect">✋ 识别手数</label>
+                <select id="maxHandsSelect">
+                    <option value="1">1 只</option>
+                    <option value="2">2 只</option>
+                    <option value="4" selected>4 只</option>
+                </select>
+            </div>
+            <div class="control-row">
+                <label for="mirrorToggle">🪞 镜像显示</label>
+                <input type="checkbox" id="mirrorToggle" checked>
+            </div>
+            <div class="control-row">
+                <label for="videoOpacity">📷 摄像透明度</label>
+                <input type="range" id="videoOpacity" min="0" max="100" value="30">
+                <span class="value" id="videoOpacityValue">30</span>
+            </div>
+            <div class="control-row">
+                <label for="skeletonToggle">🦴 显示骨架</label>
+                <input type="checkbox" id="skeletonToggle" checked>
+            </div>
+        </div>
 
         <div id="startScreen">
             <h1>🎈 手势抓气球 🎈</h1>
@@ -198,6 +376,174 @@
             { stroke: 'rgba(200, 100, 255, 0.6)', fill: '#C864FF', closedStroke: 'rgba(255, 50, 100, 0.6)', closedFill: '#FF3264' }
         ];
 
+        // ============ 设置 ============
+        const settings = {
+            soundEnabled: true,
+            volume: 0.6,
+            bgmEnabled: true,
+            difficulty: 'normal',
+            duration: 60,
+            maxHands: 4,
+            mirror: true,
+            videoOpacity: 0.3,
+            showSkeleton: true
+        };
+
+        const DIFFICULTY_PRESETS = {
+            easy:   { spawnRate: 2000, balloonSpeed: 0.7, bombWeight: 1 },
+            normal: { spawnRate: 1500, balloonSpeed: 1.0, bombWeight: 2 },
+            hard:   { spawnRate: 900,  balloonSpeed: 1.4, bombWeight: 4 }
+        };
+
+        // ============ 音效系统 ============
+        let audioCtx = null;
+        let bgmOscillator = null;
+        let bgmGain = null;
+
+        function ensureAudio() {
+            if (!audioCtx) {
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    console.warn('Web Audio 不支持:', e);
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            return audioCtx;
+        }
+
+        function playTone({ freq = 440, duration = 0.15, type = 'sine', volume = 1, slide = null }) {
+            if (!settings.soundEnabled) return;
+            const ctx = ensureAudio();
+            if (!ctx) return;
+
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+            if (slide !== null) {
+                osc.frequency.exponentialRampToValueAtTime(slide, ctx.currentTime + duration);
+            }
+            const finalVol = volume * settings.volume * 0.3;
+            gain.gain.setValueAtTime(finalVol, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + duration);
+        }
+
+        function playNoise({ duration = 0.2, volume = 1, filterFreq = 1000 }) {
+            if (!settings.soundEnabled) return;
+            const ctx = ensureAudio();
+            if (!ctx) return;
+
+            const bufferSize = ctx.sampleRate * duration;
+            const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+            }
+            const noise = ctx.createBufferSource();
+            noise.buffer = buffer;
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = filterFreq;
+            const gain = ctx.createGain();
+            gain.gain.value = volume * settings.volume * 0.4;
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(ctx.destination);
+            noise.start();
+            noise.stop(ctx.currentTime + duration);
+        }
+
+        const sfx = {
+            pop:    () => playTone({ freq: 800, slide: 400, duration: 0.12, type: 'triangle', volume: 0.8 }),
+            star:   () => {
+                [523, 659, 784, 1047].forEach((f, i) => {
+                    setTimeout(() => playTone({ freq: f, duration: 0.15, type: 'sine', volume: 0.9 }), i * 60);
+                });
+            },
+            bomb:   () => {
+                playNoise({ duration: 0.4, volume: 1, filterFreq: 400 });
+                playTone({ freq: 120, slide: 40, duration: 0.4, type: 'sawtooth', volume: 0.8 });
+            },
+            freeze: () => {
+                playTone({ freq: 1200, slide: 600, duration: 0.3, type: 'sine', volume: 0.7 });
+                setTimeout(() => playTone({ freq: 900, slide: 450, duration: 0.3, type: 'sine', volume: 0.5 }), 80);
+            },
+            multi:  () => {
+                [440, 554, 659].forEach((f, i) => {
+                    setTimeout(() => playTone({ freq: f, duration: 0.1, type: 'square', volume: 0.6 }), i * 50);
+                });
+            },
+            time:   () => {
+                playTone({ freq: 660, slide: 880, duration: 0.2, type: 'sine', volume: 0.7 });
+            },
+            miss:   () => playTone({ freq: 200, slide: 150, duration: 0.1, type: 'sine', volume: 0.3 }),
+            combo:  (n) => playTone({ freq: 400 + n * 50, duration: 0.12, type: 'square', volume: 0.5 }),
+            levelUp:() => {
+                [523, 659, 784, 1047].forEach((f, i) => {
+                    setTimeout(() => playTone({ freq: f, duration: 0.2, type: 'triangle', volume: 0.8 }), i * 80);
+                });
+            },
+            countdown: () => playTone({ freq: 880, duration: 0.1, type: 'sine', volume: 0.6 }),
+            gameOver: () => {
+                [659, 523, 440, 330].forEach((f, i) => {
+                    setTimeout(() => playTone({ freq: f, duration: 0.3, type: 'triangle', volume: 0.7 }), i * 150);
+                });
+            },
+            start:  () => {
+                [440, 554, 659, 880].forEach((f, i) => {
+                    setTimeout(() => playTone({ freq: f, duration: 0.12, type: 'triangle', volume: 0.7 }), i * 60);
+                });
+            }
+        };
+
+        function startBGM() {
+            if (!settings.bgmEnabled || !settings.soundEnabled) return;
+            stopBGM();
+            const ctx = ensureAudio();
+            if (!ctx) return;
+
+            // 用琶音循环做简单 BGM
+            const notes = [261.63, 329.63, 392, 523.25, 392, 329.63];
+            let i = 0;
+            bgmGain = ctx.createGain();
+            bgmGain.gain.value = settings.volume * 0.08;
+            bgmGain.connect(ctx.destination);
+
+            function playNextNote() {
+                if (!gameState.running || !settings.bgmEnabled) return;
+                const osc = ctx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.value = notes[i % notes.length];
+                const noteGain = ctx.createGain();
+                noteGain.gain.setValueAtTime(0, ctx.currentTime);
+                noteGain.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.05);
+                noteGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+                osc.connect(noteGain);
+                noteGain.connect(bgmGain);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.4);
+                i++;
+                bgmOscillator = setTimeout(playNextNote, 350);
+            }
+            playNextNote();
+        }
+
+        function stopBGM() {
+            if (bgmOscillator) {
+                clearTimeout(bgmOscillator);
+                bgmOscillator = null;
+            }
+            if (bgmGain) {
+                try { bgmGain.disconnect(); } catch (e) {}
+                bgmGain = null;
+            }
+        }
+
         // 气球类型配置
         const BALLOON_TYPES = [
             { color: '#FF6B6B', gradient: ['#FF6B6B', '#C92A2A'], score: 10, weight: 38, name: '红色' },
@@ -254,7 +600,7 @@
                 });
 
                 hands.setOptions({
-                    maxNumHands: 4,
+                    maxNumHands: settings.maxHands,
                     modelComplexity: 1,
                     minDetectionConfidence: 0.7,
                     minTrackingConfidence: 0.5
@@ -297,8 +643,10 @@
                         y: (landmarks[0].y + landmarks[9].y) / 2
                     };
 
+                    const mirrorX = (x) => settings.mirror ? (1 - x) : x;
+
                     const position = {
-                        x: (1 - palmCenter.x) * canvas.width,
+                        x: mirrorX(palmCenter.x) * canvas.width,
                         y: palmCenter.y * canvas.height
                     };
 
@@ -306,7 +654,7 @@
                     const lastClosed = prevHands[i] ? prevHands[i].closed : false;
 
                     const handLandmarks = landmarks.map(p => ({
-                        x: (1 - p.x) * canvas.width,
+                        x: mirrorX(p.x) * canvas.width,
                         y: p.y * canvas.height
                     }));
 
@@ -394,7 +742,9 @@
                 this.type = type;
                 this.x = Math.random() * (canvas.width - 100) + 50;
                 this.y = canvas.height + 50;
-                this.radius = 35 + Math.random() * 15;
+                this.targetRadius = 35 + Math.random() * 15;
+                this.radius = 0;  // 从 0 开始膨胀出现
+                this.spawnFrame = 0;
                 this.speed = (1 + Math.random() * 0.5) * gameState.balloonSpeed;
                 this.swayAmplitude = 30 + Math.random() * 40;
                 this.swayFrequency = 0.001 + Math.random() * 0.002;
@@ -405,12 +755,22 @@
                 this.popped = false;
                 this.popFrame = 0;
                 this.stringLength = 80 + Math.random() * 40;
+                this.glowPhase = Math.random() * Math.PI * 2;
             }
 
             update(deltaTime) {
                 if (this.popped) {
                     this.popFrame++;
                     return;
+                }
+
+                // 出生膨胀动画
+                if (this.spawnFrame < 15) {
+                    this.spawnFrame++;
+                    const t = this.spawnFrame / 15;
+                    this.radius = this.targetRadius * (1 - Math.pow(1 - t, 3));  // ease-out
+                } else {
+                    this.radius = this.targetRadius;
                 }
 
                 // 冰冻效果：气球速度减半
@@ -430,6 +790,13 @@
                 ctx.save();
                 ctx.translate(this.x, this.y);
                 ctx.rotate(this.rotation);
+
+                // 特殊气球脉冲发光
+                if (this.type.isStar || this.type.isBomb || this.type.isFreeze || this.type.isMultiplier || this.type.isTime) {
+                    const pulse = 0.5 + Math.sin(Date.now() * 0.006 + this.glowPhase) * 0.3;
+                    ctx.shadowColor = this.type.color;
+                    ctx.shadowBlur = 20 * pulse + 10;
+                }
 
                 // 画绳子
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
@@ -670,6 +1037,7 @@
                             '空手!',
                             '#888888'
                         ));
+                        sfx.miss();
                     }
                 }
             }
@@ -709,6 +1077,7 @@
                 gameState.flashColor = 'rgba(255, 0, 0, 0.4)';
                 gameState.flashTimer = 20;
                 gameState.combo = 0;
+                sfx.bomb();
             } else if (balloon.type.isStar) {
                 // 星星：额外特效 + 金色闪光
                 gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '⭐ BONUS!', 'gold'));
@@ -718,12 +1087,14 @@
                 for (let i = 0; i < 15; i++) {
                     gameState.particles.push(new Sparkle(balloon.x, balloon.y, 'gold'));
                 }
+                sfx.star();
             } else if (balloon.type.isFreeze) {
                 // 冰冻：所有气球减速5秒
                 gameState.freezeTimer = 300; // 5秒
                 gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '❄ 冰冻!', '#00D9FF'));
                 gameState.flashColor = 'rgba(0, 217, 255, 0.3)';
                 gameState.flashTimer = 20;
+                sfx.freeze();
             } else if (balloon.type.isMultiplier) {
                 // 双倍：分数x2 持续8秒
                 gameState.scoreMultiplier = 2;
@@ -731,12 +1102,16 @@
                 gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '×2 双倍分数!', '#FF6FB5'));
                 gameState.flashColor = 'rgba(255, 111, 181, 0.3)';
                 gameState.flashTimer = 20;
+                sfx.multi();
             } else if (balloon.type.isTime) {
                 // 时间：+5秒
                 gameState.timeLeft += 5;
                 gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '+5秒!', '#90EE90'));
                 gameState.flashColor = 'rgba(144, 238, 144, 0.3)';
                 gameState.flashTimer = 20;
+                sfx.time();
+            } else {
+                sfx.pop();
             }
 
             // 连击提示
@@ -747,7 +1122,13 @@
                     `${gameState.combo} COMBO!`,
                     '#FFD93D'
                 ));
+                sfx.combo(gameState.combo);
             }
+
+            // 得分数字弹跳动画
+            scoreEl.classList.remove('score-pop');
+            void scoreEl.offsetWidth;
+            scoreEl.classList.add('score-pop');
 
             gameState.score = Math.max(0, gameState.score);
             updateUI();
@@ -761,7 +1142,7 @@
                 const { x, y } = hand.position;
                 const colors = hand.color;
 
-                if (hand.landmarks) {
+                if (hand.landmarks && settings.showSkeleton) {
                     ctx.strokeStyle = hand.closed ? colors.closedStroke : colors.stroke;
                     ctx.lineWidth = 2;
 
@@ -846,16 +1227,24 @@
 
             if (newLevel > gameState.level) {
                 gameState.level = newLevel;
-                gameState.spawnRate = Math.max(500, 1500 - (gameState.level - 1) * 250);
-                gameState.balloonSpeed = 1 + (gameState.level - 1) * 0.3;
+                gameState.spawnRate = Math.max(500, DIFFICULTY_PRESETS[settings.difficulty].spawnRate - (gameState.level - 1) * 250);
+                gameState.balloonSpeed = DIFFICULTY_PRESETS[settings.difficulty].balloonSpeed + (gameState.level - 1) * 0.3;
 
-                // 显示等级提升提示
+                // 显示等级提升提示 + 音效 + 闪光
                 gameState.particles.push(new FloatingText(
                     canvas.width / 2,
                     canvas.height / 2,
                     `等级 ${gameState.level}!`,
                     '#FFD93D'
                 ));
+                gameState.flashColor = 'rgba(255, 215, 61, 0.25)';
+                gameState.flashTimer = 20;
+                sfx.levelUp();
+
+                // 等级数字动画
+                levelEl.classList.remove('score-pop');
+                void levelEl.offsetWidth;
+                levelEl.classList.add('score-pop');
             }
         }
 
@@ -881,11 +1270,22 @@
             }
 
             // 更新时间
+            const prevTime = gameState.timeLeft;
             gameState.timeLeft -= deltaTime / 1000;
             if (gameState.timeLeft <= 0) {
                 gameState.timeLeft = 0;
                 endGame();
                 return;
+            }
+
+            // 最后 5 秒倒计时滴答
+            const prevCeil = Math.ceil(prevTime);
+            const currCeil = Math.ceil(gameState.timeLeft);
+            if (currCeil < prevCeil && currCeil <= 5 && currCeil > 0) {
+                sfx.countdown();
+                timerEl.classList.remove('score-pop');
+                void timerEl.offsetWidth;
+                timerEl.classList.add('score-pop');
             }
 
             // 更新各种定时器（按帧数）
@@ -1001,16 +1401,17 @@
                 return;
             }
 
-            // 重置游戏状态
+            // 重置游戏状态（应用难度和时长设置）
+            const preset = DIFFICULTY_PRESETS[settings.difficulty];
             gameState.running = true;
             gameState.score = 0;
             gameState.level = 1;
-            gameState.timeLeft = 60;
+            gameState.timeLeft = settings.duration;
             gameState.balloonsCaught = 0;
             gameState.balloons = [];
             gameState.particles = [];
-            gameState.spawnRate = 1500;
-            gameState.balloonSpeed = 1;
+            gameState.spawnRate = preset.spawnRate;
+            gameState.balloonSpeed = preset.balloonSpeed;
             gameState.lastSpawn = 0;
             gameState.grabbedBalloon = null;
             gameState.combo = 0;
@@ -1027,12 +1428,21 @@
             startScreen.style.display = 'none';
             gameOverScreen.style.display = 'none';
 
+            // 根据难度调整炸弹出现率
+            const bombType = BALLOON_TYPES.find(t => t.isBomb);
+            if (bombType) bombType.weight = preset.bombWeight;
+
+            sfx.start();
+            startBGM();
+
             lastFrameTime = performance.now();
             requestAnimationFrame(gameLoop);
         }
 
         function endGame() {
             gameState.running = false;
+            stopBGM();
+            sfx.gameOver();
             // 更新最大连击
             gameState.maxCombo = Math.max(gameState.maxCombo, gameState.combo);
             finalScoreEl.textContent = gameState.score;
@@ -1042,8 +1452,78 @@
         }
 
         // 按钮事件
-        document.getElementById('startBtn').addEventListener('click', startGame);
-        document.getElementById('restartBtn').addEventListener('click', startGame);
+        document.getElementById('startBtn').addEventListener('click', () => {
+            ensureAudio();  // 用户交互时初始化 AudioContext
+            startGame();
+        });
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            ensureAudio();
+            startGame();
+        });
+
+        // ============ 控制面板事件 ============
+        const controlPanel = document.getElementById('controlPanel');
+        const panelToggle = document.getElementById('panelToggle');
+        panelToggle.addEventListener('click', () => {
+            controlPanel.classList.toggle('open');
+        });
+
+        // 点击面板外部关闭
+        document.addEventListener('click', (e) => {
+            if (controlPanel.classList.contains('open') &&
+                !controlPanel.contains(e.target) &&
+                e.target !== panelToggle) {
+                controlPanel.classList.remove('open');
+            }
+        });
+
+        document.getElementById('soundToggle').addEventListener('change', (e) => {
+            settings.soundEnabled = e.target.checked;
+            if (!settings.soundEnabled) stopBGM();
+            else if (gameState.running && settings.bgmEnabled) startBGM();
+        });
+
+        document.getElementById('volumeSlider').addEventListener('input', (e) => {
+            settings.volume = e.target.value / 100;
+            document.getElementById('volumeValue').textContent = e.target.value;
+            if (bgmGain) bgmGain.gain.value = settings.volume * 0.08;
+        });
+
+        document.getElementById('bgmToggle').addEventListener('change', (e) => {
+            settings.bgmEnabled = e.target.checked;
+            if (!settings.bgmEnabled) stopBGM();
+            else if (gameState.running) startBGM();
+        });
+
+        document.getElementById('difficultySelect').addEventListener('change', (e) => {
+            settings.difficulty = e.target.value;
+        });
+
+        document.getElementById('gameDuration').addEventListener('change', (e) => {
+            settings.duration = parseInt(e.target.value, 10);
+        });
+
+        document.getElementById('maxHandsSelect').addEventListener('change', (e) => {
+            settings.maxHands = parseInt(e.target.value, 10);
+            if (hands) {
+                hands.setOptions({ maxNumHands: settings.maxHands });
+            }
+        });
+
+        document.getElementById('mirrorToggle').addEventListener('change', (e) => {
+            settings.mirror = e.target.checked;
+            video.style.transform = settings.mirror ? 'scaleX(-1)' : 'scaleX(1)';
+        });
+
+        document.getElementById('videoOpacity').addEventListener('input', (e) => {
+            settings.videoOpacity = e.target.value / 100;
+            document.getElementById('videoOpacityValue').textContent = e.target.value;
+            video.style.opacity = settings.videoOpacity;
+        });
+
+        document.getElementById('skeletonToggle').addEventListener('change', (e) => {
+            settings.showSkeleton = e.target.checked;
+        });
     </script>
 </body>
 </html>
