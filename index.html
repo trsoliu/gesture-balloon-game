@@ -234,13 +234,18 @@
         // ============ MediaPipe 手势识别 ============
         const MEDIAPIPE_VERSION = '0.4.1675469240';
         let hands;
-        let camera;
+        let videoStream = null;
+        let trackingActive = false;
         let mediapipeReady = false;
 
-        async function initMediaPipe() {
+        function initMediaPipe() {
             const statusEl = document.getElementById('loadingStatus');
             try {
-                statusEl.textContent = '正在加载手势识别模型...';
+                if (typeof Hands === 'undefined') {
+                    statusEl.textContent = 'MediaPipe 脚本加载失败，请检查网络';
+                    statusEl.style.color = '#FF6B6B';
+                    return;
+                }
 
                 hands = new Hands({
                     locateFile: (file) => {
@@ -257,23 +262,30 @@
 
                 hands.onResults(onHandResults);
 
-                // 发送一帧空白图像来触发模型加载
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = 1;
-                tempCanvas.height = 1;
-                await hands.send({ image: tempCanvas });
-
                 mediapipeReady = true;
-                statusEl.textContent = '模型加载完成！点击开始游戏';
+                statusEl.textContent = '点击开始游戏（首次启动会下载模型）';
                 statusEl.style.color = '#4ECDC4';
             } catch (err) {
                 console.error('MediaPipe 初始化失败:', err);
-                statusEl.textContent = '模型加载失败，请刷新页面重试';
+                statusEl.textContent = '初始化失败: ' + err.message;
                 statusEl.style.color = '#FF6B6B';
             }
         }
 
         initMediaPipe();
+
+        // 基于 requestAnimationFrame 的帧循环，替代不稳定的 Camera 工具
+        async function trackingLoop() {
+            if (!trackingActive) return;
+            if (video.readyState >= 2) {
+                try {
+                    await hands.send({ image: video });
+                } catch (err) {
+                    console.error('手势识别帧处理失败:', err);
+                }
+            }
+            requestAnimationFrame(trackingLoop);
+        }
 
         function onHandResults(results) {
             const prevHands = gameState.hands;
@@ -949,22 +961,43 @@
         // ============ 游戏控制 ============
         async function startGame() {
             if (!mediapipeReady) {
-                alert('手势识别模型尚未加载完成，请稍候再试。');
+                alert('手势识别尚未就绪，请刷新页面重试。');
                 return;
             }
 
+            // 启动摄像头
+            const statusEl = document.getElementById('loadingStatus');
             try {
-                // 初始化并启动摄像头
-                camera = new Camera(video, {
-                    onFrame: async () => {
-                        await hands.send({ image: video });
-                    },
-                    width: 1280,
-                    height: 720
-                });
-                await camera.start();
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('浏览器不支持摄像头 API，请使用 Chrome/Edge/Safari 最新版');
+                }
+
+                if (!videoStream) {
+                    statusEl.textContent = '正在请求摄像头权限...';
+                    videoStream = await navigator.mediaDevices.getUserMedia({
+                        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+                        audio: false
+                    });
+                    video.srcObject = videoStream;
+                    await video.play();
+
+                    // 启动识别循环
+                    trackingActive = true;
+                    trackingLoop();
+                }
             } catch (err) {
-                alert('无法访问摄像头！请确保浏览器有权限访问摄像头。\n错误: ' + err.message);
+                console.error('摄像头启动失败:', err);
+                let message = err.message;
+                if (err.name === 'NotAllowedError') {
+                    message = '摄像头权限被拒绝，请在浏览器地址栏点击锁/摄像头图标授权';
+                } else if (err.name === 'NotFoundError') {
+                    message = '未找到摄像头设备';
+                } else if (err.name === 'NotReadableError') {
+                    message = '摄像头被其他程序占用，请关闭其他使用摄像头的应用';
+                } else if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                    message = '摄像头需要 HTTPS 或 localhost，当前协议: ' + location.protocol;
+                }
+                alert('摄像头启动失败：\n' + message);
                 return;
             }
 
