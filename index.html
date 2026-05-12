@@ -162,6 +162,29 @@
             transition: transform 0.2s;
         }
         #panelToggle:hover { transform: rotate(45deg); }
+        #fullscreenToggle {
+            position: absolute;
+            top: 125px;
+            right: 20px;
+            width: 44px;
+            height: 44px;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            z-index: 16;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+        #fullscreenToggle:hover { transform: scale(1.1); }
         #controlPanel h3 {
             font-size: 16px;
             margin-bottom: 12px;
@@ -262,6 +285,7 @@
         <div id="handStatus">手势: 检测中...</div>
 
         <button id="panelToggle" title="设置">⚙</button>
+        <button id="fullscreenToggle" title="全屏 (F)">⛶</button>
         <div id="controlPanel">
             <h3>🎛 控制面板</h3>
             <div class="control-row">
@@ -315,7 +339,8 @@
                 <label for="skeletonToggle">🦴 显示骨架</label>
                 <input type="checkbox" id="skeletonToggle" checked>
             </div>
-            <button id="pauseBtn" style="width: 100%; margin-top: 10px; padding: 10px; font-size: 14px;">⏸ 暂停/恢复</button>
+            <button id="fullscreenBtn" style="width: 100%; margin-top: 10px; padding: 10px; font-size: 14px;">⛶ 切换全屏</button>
+            <button id="pauseBtn" style="width: 100%; margin-top: 8px; padding: 10px; font-size: 14px;">⏸ 暂停/恢复</button>
         </div>
 
         <div id="startScreen">
@@ -325,11 +350,11 @@
             <p class="instruction">支持多人同时游玩！最多识别 4 只手</p>
             <div style="font-size: 16px; margin: 15px 0; line-height: 1.8;">
                 <div>🔴 普通气球 +10 &nbsp;&nbsp; 🟢 +15 &nbsp;&nbsp; 🟡 +20</div>
-                <div>⭐ 星星 +50分 &nbsp;&nbsp; 💣 炸弹 -30分！</div>
-                <div>❄ 冰冻气球 - 让所有气球减速</div>
-                <div>×2 双倍气球 - 8秒内分数翻倍</div>
-                <div>⏰ 时间气球 - +5秒额外时间</div>
+                <div>⭐ 星星 +50分 &nbsp;&nbsp; 🌈 彩虹 +100分！</div>
+                <div>💣 炸弹 -30分 &nbsp;&nbsp; ❄ 冰冻减速</div>
+                <div>×2 双倍气球 &nbsp;&nbsp; ⏰ 时间 +5秒</div>
                 <div>🔥 连击奖励 - 连续抓取获得额外分数</div>
+                <div style="color: #FFD93D; margin-top: 8px;">按 F 键全屏 &nbsp;&nbsp; 空格键暂停</div>
             </div>
             <div id="loadingStatus" style="font-size: 14px; color: #aaa; margin: 10px 0;"></div>
             <button id="startBtn">开始游戏</button>
@@ -504,6 +529,13 @@
                     setTimeout(() => playTone({ freq: f, duration: 0.12, type: 'triangle', volume: 0.7 }), i * 60);
                 });
             },
+            rainbow: () => {
+                // 上行琶音 + 高音点缀
+                [392, 494, 587, 740, 880, 1109, 1319].forEach((f, i) => {
+                    setTimeout(() => playTone({ freq: f, duration: 0.18, type: 'sine', volume: 0.7 }), i * 45);
+                });
+                setTimeout(() => playTone({ freq: 1760, duration: 0.3, type: 'triangle', volume: 0.8 }), 350);
+            },
             pause:  () => {
                 playTone({ freq: 600, slide: 300, duration: 0.2, type: 'sine', volume: 0.6 });
             },
@@ -557,10 +589,11 @@
 
         // 气球类型配置
         const BALLOON_TYPES = [
-            { color: '#FF6B6B', gradient: ['#FF6B6B', '#C92A2A'], score: 10, weight: 38, name: '红色' },
-            { color: '#4ECDC4', gradient: ['#4ECDC4', '#0CA678'], score: 15, weight: 25, name: '青色' },
-            { color: '#FFD93D', gradient: ['#FFD93D', '#F08C00'], score: 20, weight: 18, name: '黄色' },
+            { color: '#FF6B6B', gradient: ['#FF6B6B', '#C92A2A'], score: 10, weight: 35, name: '红色' },
+            { color: '#4ECDC4', gradient: ['#4ECDC4', '#0CA678'], score: 15, weight: 23, name: '青色' },
+            { color: '#FFD93D', gradient: ['#FFD93D', '#F08C00'], score: 20, weight: 16, name: '黄色' },
             { color: '#A29BFE', gradient: ['#A29BFE', '#5F3DC4'], score: 50, weight: 6, name: '星星', isStar: true },
+            { color: '#FF69B4', gradient: ['#FF69B4', '#FF1493'], score: 100, weight: 3, name: '彩虹', isRainbow: true },
             { color: '#00D9FF', gradient: ['#00D9FF', '#0066CC'], score: 5, weight: 5, name: '冰冻', isFreeze: true },
             { color: '#FF6FB5', gradient: ['#FF6FB5', '#D6336C'], score: 5, weight: 4, name: '双倍', isMultiplier: true },
             { color: '#90EE90', gradient: ['#90EE90', '#2F9E44'], score: 0, weight: 2, name: '时间', isTime: true },
@@ -836,10 +869,17 @@
                 ctx.rotate(this.rotation);
 
                 // 特殊气球脉冲发光
-                if (this.type.isStar || this.type.isBomb || this.type.isFreeze || this.type.isMultiplier || this.type.isTime) {
+                if (this.type.isStar || this.type.isBomb || this.type.isFreeze || this.type.isMultiplier || this.type.isTime || this.type.isRainbow) {
                     const pulse = 0.5 + Math.sin(Date.now() * 0.006 + this.glowPhase) * 0.3;
-                    ctx.shadowColor = this.type.color;
-                    ctx.shadowBlur = 20 * pulse + 10;
+                    if (this.type.isRainbow) {
+                        // 彩虹气球：光环颜色随时间变化
+                        const hue = (Date.now() * 0.2 + this.glowPhase * 60) % 360;
+                        ctx.shadowColor = `hsl(${hue}, 100%, 60%)`;
+                        ctx.shadowBlur = 30 * pulse + 15;
+                    } else {
+                        ctx.shadowColor = this.type.color;
+                        ctx.shadowBlur = 20 * pulse + 10;
+                    }
                 }
 
                 // 画绳子
@@ -861,12 +901,22 @@
                 ctx.shadowOffsetY = 5;
 
                 // 画气球本体（径向渐变）
-                const gradient = ctx.createRadialGradient(
-                    -this.radius * 0.3, -this.radius * 0.3, this.radius * 0.1,
-                    0, 0, this.radius
-                );
-                gradient.addColorStop(0, this.type.gradient[0]);
-                gradient.addColorStop(1, this.type.gradient[1]);
+                let gradient;
+                if (this.type.isRainbow) {
+                    // 彩虹气球：HSL 循环渐变
+                    const hueBase = (Date.now() * 0.1) % 360;
+                    gradient = ctx.createLinearGradient(-this.radius, -this.radius, this.radius, this.radius);
+                    for (let i = 0; i <= 6; i++) {
+                        gradient.addColorStop(i / 6, `hsl(${(hueBase + i * 60) % 360}, 90%, 60%)`);
+                    }
+                } else {
+                    gradient = ctx.createRadialGradient(
+                        -this.radius * 0.3, -this.radius * 0.3, this.radius * 0.1,
+                        0, 0, this.radius
+                    );
+                    gradient.addColorStop(0, this.type.gradient[0]);
+                    gradient.addColorStop(1, this.type.gradient[1]);
+                }
 
                 ctx.fillStyle = gradient;
                 ctx.beginPath();
@@ -919,6 +969,11 @@
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillText('⏰', 0, 0);
+                } else if (this.type.isRainbow) {
+                    ctx.font = `${this.radius * 0.8}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('🌈', 0, 0);
                 }
 
                 ctx.restore();
@@ -1190,6 +1245,17 @@
                 gameState.flashColor = 'rgba(144, 238, 144, 0.3)';
                 gameState.flashTimer = 20;
                 sfx.time();
+            } else if (balloon.type.isRainbow) {
+                // 彩虹气球：超高分 + 彩虹粒子爆炸 + 彩虹闪光
+                gameState.particles.push(new FloatingText(balloon.x, balloon.y - 50, '🌈 RAINBOW!', '#FF69B4'));
+                const rainbowColors = ['#FF0000', '#FF8800', '#FFDD00', '#00DD00', '#00DDFF', '#0088FF', '#8800FF'];
+                for (let i = 0; i < 30; i++) {
+                    const color = rainbowColors[i % rainbowColors.length];
+                    gameState.particles.push(new Sparkle(balloon.x, balloon.y, color));
+                }
+                gameState.flashColor = `hsla(${(Date.now() * 0.1) % 360}, 100%, 60%, 0.35)`;
+                gameState.flashTimer = 25;
+                sfx.rainbow();
             } else {
                 sfx.pop();
             }
@@ -1688,12 +1754,41 @@
             }
         });
 
-        // 空格键快捷暂停
+        // ============ 全屏功能 ============
+        function toggleFullscreen() {
+            const elem = document.documentElement;
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                const req = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.mozRequestFullScreen || elem.msRequestFullscreen;
+                if (req) {
+                    req.call(elem).catch(err => {
+                        console.warn('全屏请求失败:', err);
+                    });
+                }
+            } else {
+                const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+                if (exit) exit.call(document);
+            }
+        }
+
+        document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
+        document.getElementById('fullscreenToggle').addEventListener('click', toggleFullscreen);
+
+        // 进入/退出全屏后自适应画布
+        function onFullscreenChange() {
+            setTimeout(resizeCanvas, 100);
+        }
+        document.addEventListener('fullscreenchange', onFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+
+        // 空格键快捷暂停 / F 键切换全屏
         document.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && gameState.running) {
                 e.preventDefault();
                 togglePause();
                 gameState.pauseCooldown = PAUSE_COOLDOWN_FRAMES;
+            } else if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                toggleFullscreen();
             }
         });
     </script>
